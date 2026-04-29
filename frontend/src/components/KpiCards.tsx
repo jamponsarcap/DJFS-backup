@@ -1,19 +1,20 @@
 import { TrendingUp, TrendingDown, Wallet, BarChart2, Shield } from 'lucide-react'
 import type { PortfolioData } from '../types'
 
-const fmt = (n: number) =>
-  new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', maximumFractionDigits: 0 }).format(n)
+const fmt = (n: number, currency: string) =>
+  new Intl.NumberFormat('en-GB', { style: 'currency', currency, maximumFractionDigits: 0 }).format(n)
 
 const fmtPct = (n: number) => `${n >= 0 ? '+' : ''}${n.toFixed(2)}%`
 
 interface Props { data: PortfolioData }
 
 export default function KpiCards({ data }: Props) {
+  const currency = data.accounts[0]?.currency ?? 'GBP'
   const highAlerts = data.risk_alerts.filter(a => a.level === 'high').length
   const cards = [
     {
       label: 'Total Portfolio Value',
-      value: fmt(data.total_value),
+      value: fmt(data.total_value, currency),
       sub: null,
       icon: <Wallet size={20} />,
       color: 'text-teal-500',
@@ -21,7 +22,7 @@ export default function KpiCards({ data }: Props) {
     },
     {
       label: 'Total Return',
-      value: fmt(data.total_return),
+      value: fmt(data.total_return, currency),
       sub: fmtPct(data.total_return_pct),
       icon: data.total_return >= 0 ? <TrendingUp size={20} /> : <TrendingDown size={20} />,
       color: data.total_return >= 0 ? 'text-emerald-600' : 'text-red-500',

@@ -112,7 +112,7 @@ export default function App() {
             <PerformanceChart data={portfolio.performance} />
 
             {/* Holdings */}
-            <HoldingsTable holdings={portfolio.holdings} />
+            <HoldingsTable holdings={portfolio.holdings} currency={portfolio.accounts[0]?.currency ?? 'GBP'} />
 
             {/* Cash flow + Risk alerts */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

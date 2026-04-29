@@ -83,9 +83,9 @@ MOCK_PORTFOLIOS = {
         "total_return_pct": 16.79,
         "ytd_return_pct": 8.42,
         "accounts": [
-            {"id": "acc_001a", "type": "personal", "name": "ISA Portfolio",      "balance": 542_300.00, "currency": "GBP"},
-            {"id": "acc_001b", "type": "personal", "name": "General Investment",  "balance": 489_150.00, "currency": "GBP"},
-            {"id": "acc_001c", "type": "joint",    "name": "Joint Savings",       "balance": 253_300.00, "currency": "GBP"},
+            {"id": "acc_001a", "type": "personal", "name": "ISA Portfolio",      "balance": 542_300.00, "currency": "USD"},
+            {"id": "acc_001b", "type": "personal", "name": "General Investment",  "balance": 489_150.00, "currency": "USD"},
+            {"id": "acc_001c", "type": "joint",    "name": "Joint Savings",       "balance": 253_300.00, "currency": "USD"},
         ],
         "holdings": [
             {"symbol": "AAPL",  "name": "Apple Inc.",            "asset_class": "equity",        "quantity": 480,   "current_price": 189.30, "market_value": 90864.00,  "cost_basis": 72000.00,  "gain_loss": 18864.00,  "gain_loss_pct": 26.2,  "weight": 7.07},

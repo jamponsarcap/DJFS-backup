@@ -1,7 +1,7 @@
 import type { Holding } from '../types'
 
-const fmt = (n: number) =>
-  new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', maximumFractionDigits: 0 }).format(n)
+const fmt = (n: number, currency: string) =>
+  new Intl.NumberFormat('en-GB', { style: 'currency', currency, maximumFractionDigits: 0 }).format(n)
 
 const classColors: Record<string, string> = {
   equity:       'bg-blue-100 text-blue-700',
@@ -17,9 +17,9 @@ const classLabels: Record<string, string> = {
   alternatives: 'Alts',
 }
 
-interface Props { holdings: Holding[] }
+interface Props { holdings: Holding[]; currency: string }
 
-export default function HoldingsTable({ holdings }: Props) {
+export default function HoldingsTable({ holdings, currency }: Props) {
   const sorted = [...holdings].sort((a, b) => b.market_value - a.market_value)
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
@@ -47,7 +47,7 @@ export default function HoldingsTable({ holdings }: Props) {
                     {classLabels[h.asset_class] ?? h.asset_class}
                   </span>
                 </td>
-                <td className="py-2.5 text-right font-medium text-gray-900">{fmt(h.market_value)}</td>
+                <td className="py-2.5 text-right font-medium text-gray-900">{fmt(h.market_value, currency)}</td>
                 <td className="py-2.5 text-right text-gray-500">{h.weight.toFixed(1)}%</td>
                 <td className={`py-2.5 text-right font-medium ${h.gain_loss >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
                   {h.gain_loss >= 0 ? '+' : ''}{h.gain_loss_pct.toFixed(1)}%
