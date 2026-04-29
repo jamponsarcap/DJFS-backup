@@ -8,6 +8,7 @@ from models.schemas import (
 )
 from services.fabric_service import fabric_service
 from services.document_intel_service import doc_intel_service
+from services.search_service import search_service
 from agents.portfolio_agent import portfolio_agent
 
 app = FastAPI(
@@ -81,6 +82,12 @@ async def upload_statement(client_id: str, file: UploadFile = File(...)):
 
     contents = await file.read()
     extraction = await doc_intel_service.extract_statement(contents, file.filename)
+
+    chunks = [
+        {"text": f"{t['date']} {t['description']} {t['amount']}", "page": None}
+        for t in extraction["transactions"]
+    ]
+    await search_service.index_document(client_id, file.filename, chunks)
 
     return DocumentUploadResponse(
         filename=file.filename,

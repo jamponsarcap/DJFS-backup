@@ -41,15 +41,21 @@ class SearchService:
         if not self._live:
             return MOCK_SEARCH_RESULTS
 
-        # PLACEHOLDER ─ hybrid (keyword + vector) search filtered by client
-        # results = self._client.search(
-        #     search_text=query,
-        #     filter=f"client_id eq '{client_id}'",
-        #     top=top,
-        #     select=["id", "content", "source"],
-        # )
-        # return [{"id": r["id"], "content": r["content"], "source": r["source"], "score": r["@search.score"]} for r in results]
-        raise NotImplementedError
+        results = self._client.search(
+            search_text=query,
+            filter=f"client_id eq '{client_id}'",
+            top=top,
+            select=["id", "content", "source"],
+        )
+        return [
+            {
+                "id": r["id"],
+                "content": r["content"],
+                "source": r["source"],
+                "score": r["@search.score"],
+            }
+            for r in results
+        ]
 
     async def index_document(self, client_id: str, filename: str, chunks: list[dict]):
         """Upload extracted document chunks into the search index."""
@@ -57,12 +63,18 @@ class SearchService:
             print(f"[SearchService] Mock: would index {len(chunks)} chunks from {filename}")
             return
 
-        # PLACEHOLDER
-        # documents = [{"id": f"{client_id}_{filename}_{i}", "client_id": client_id,
-        #               "content": c["text"], "source": filename, "page": c.get("page")}
-        #              for i, c in enumerate(chunks)]
-        # self._client.upload_documents(documents=documents)
-        raise NotImplementedError
+        documents = [
+            {
+                "id": f"{client_id}_{filename}_{i}",
+                "client_id": client_id,
+                "content": chunk["text"],
+                "source": filename,
+                "page": chunk.get("page"),
+            }
+            for i, chunk in enumerate(chunks)
+        ]
+        self._client.upload_documents(documents=documents)
+        print(f"[SearchService] Indexed {len(documents)} chunks from {filename}")
 
 
 search_service = SearchService()

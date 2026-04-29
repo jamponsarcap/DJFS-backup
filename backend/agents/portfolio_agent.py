@@ -46,7 +46,7 @@ class PortfolioAgent:
 
         # Step 4: Generate narrative via OpenAI
         print("[Agent] Step 4 – Generating RM narrative via Azure OpenAI …")
-        insights = await openai_service.generate_portfolio_narrative(portfolio)
+        insights = await openai_service.generate_portfolio_narrative(portfolio, doc_context)
         print(f"[Agent]   → Narrative generated ({len(insights['narrative'])} chars)")
 
         print("[Agent] Done.\n")

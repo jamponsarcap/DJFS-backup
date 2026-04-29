@@ -31,7 +31,7 @@ class OpenAIService:
         else:
             print("[OpenAIService] Running in mock mode (AZURE_OPENAI_ENDPOINT not set)")
 
-    async def generate_portfolio_narrative(self, portfolio_data: dict) -> dict:
+    async def generate_portfolio_narrative(self, portfolio_data: dict, doc_context: list[dict] = []) -> dict:
         client_id = portfolio_data.get("client_id", "")
 
         if not self._live:
@@ -42,7 +42,6 @@ class OpenAIService:
                 "data_sources": mock.get("data_sources", ["Mock data"]),
             }
 
-        # PLACEHOLDER ─ live Azure OpenAI call
         import json
         summary = {
             "client": portfolio_data["client_name"],
@@ -53,11 +52,17 @@ class OpenAIService:
             "top_holdings": portfolio_data["holdings"][:5],
             "risk_alerts": portfolio_data["risk_alerts"],
         }
+
+        user_content = f"Portfolio data:\n{json.dumps(summary)}"
+        if doc_context:
+            snippets = "\n".join(f"- [{d['source']}] {d['content']}" for d in doc_context)
+            user_content += f"\n\nDocument context from uploaded statements and records:\n{snippets}"
+
         response = self._client.chat.completions.create(
             model=config.AZURE_OPENAI_DEPLOYMENT,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": json.dumps(summary)},
+                {"role": "user", "content": user_content},
             ],
             response_format={"type": "json_object"},
             temperature=0.3,
