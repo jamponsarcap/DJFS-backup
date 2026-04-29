@@ -20,3 +20,9 @@ export const uploadStatement = (clientId: string, file: File): Promise<DocumentU
   form.append('file', file)
   return api.post(`/upload-statement/${clientId}`, form).then(r => r.data)
 }
+
+export const fetchLastUpload = (clientId: string): Promise<{ filename: string; uploaded_at: string } | null> =>
+  api.get(`/upload-statement/${clientId}/last`).then(r => r.data)
+
+export const undoLastUpload = (clientId: string): Promise<{ status: string; filename: string }> =>
+  api.post(`/upload-statement/${clientId}/undo`).then(r => r.data)

@@ -18,10 +18,18 @@ const LABELS: Record<string, string> = {
 interface Props { allocation: AllocationBreakdown }
 
 export default function AllocationChart({ allocation }: Props) {
-  const data = Object.entries(allocation).map(([key, value]) => ({
-    name: LABELS[key] ?? key,
-    value: Number(value.toFixed(1)),
-    color: COLORS[key] ?? '#6B7280',
+  const raw = Object.entries(allocation)
+    .map(([key, value]) => ({
+      name: LABELS[key] ?? key,
+      rawValue: Number(value),
+      color: COLORS[key] ?? '#6B7280',
+    }))
+    .filter(d => d.rawValue > 0)
+
+  const total = raw.reduce((sum, d) => sum + d.rawValue, 0)
+  const data = raw.map(d => ({
+    ...d,
+    value: total > 0 ? Number((d.rawValue / total * 100).toFixed(1)) : 0,
   }))
 
   return (
@@ -37,15 +45,20 @@ export default function AllocationChart({ allocation }: Props) {
             outerRadius={95}
             paddingAngle={3}
             dataKey="value"
-            label={({ name, value }) => `${name} ${value}%`}
-            labelLine={false}
           >
             {data.map((entry, i) => (
               <Cell key={i} fill={entry.color} />
             ))}
           </Pie>
           <Tooltip formatter={(v: number) => `${v}%`} />
-          <Legend formatter={(v) => <span className="text-xs text-gray-600">{v}</span>} />
+          <Legend
+            wrapperStyle={{ paddingTop: 16 }}
+            formatter={(v, entry: any) => (
+              <span className="text-xs text-gray-600">
+                {v} <span className="font-medium">{entry.payload.value}%</span>
+              </span>
+            )}
+          />
         </PieChart>
       </ResponsiveContainer>
     </div>

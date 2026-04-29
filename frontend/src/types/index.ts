@@ -83,9 +83,32 @@ export interface ServiceStatus {
   market_data: boolean
 }
 
+export interface AccountChange {
+  account_name: string
+  before: number
+  after: number
+  delta: number
+}
+
+export interface CashFlowChange {
+  inflow_delta: number
+  outflow_delta: number
+  net_delta: number
+}
+
+export interface StatementDiff {
+  total_value_before: number
+  total_value_after: number
+  total_value_delta: number
+  account_changes: Record<string, AccountChange>
+  cash_flow_changes: Record<string, CashFlowChange>
+  transactions_count: number
+}
+
 export interface DocumentUploadResponse {
   filename: string
   status: string
   extracted_transactions: number
   summary: string
+  diff?: StatementDiff
 }

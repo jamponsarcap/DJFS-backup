@@ -21,18 +21,22 @@ MARKET_DATA_API_KEY = os.getenv("MARKET_DATA_API_KEY", "")
 
 FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")
 
-# A service is "live" only when all its required env vars are set
+def _is_set(value: str) -> bool:
+    """True only when the value is non-empty and not a placeholder like <your-key>."""
+    return bool(value) and "<" not in value
+
+# A service is "live" only when all its required env vars are set and not placeholders
 def fabric_enabled() -> bool:
-    return bool(FABRIC_SERVER and FABRIC_DATABASE)
+    return _is_set(FABRIC_SERVER) and _is_set(FABRIC_DATABASE)
 
 def openai_enabled() -> bool:
-    return bool(AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY)
+    return _is_set(AZURE_OPENAI_ENDPOINT) and _is_set(AZURE_OPENAI_API_KEY)
 
 def search_enabled() -> bool:
-    return bool(AZURE_SEARCH_ENDPOINT and AZURE_SEARCH_API_KEY)
+    return _is_set(AZURE_SEARCH_ENDPOINT) and _is_set(AZURE_SEARCH_API_KEY)
 
 def doc_intel_enabled() -> bool:
-    return bool(AZURE_DOC_INTEL_ENDPOINT and AZURE_DOC_INTEL_KEY)
+    return _is_set(AZURE_DOC_INTEL_ENDPOINT) and _is_set(AZURE_DOC_INTEL_KEY)
 
 def market_data_enabled() -> bool:
-    return bool(MARKET_DATA_API_KEY)
+    return _is_set(MARKET_DATA_API_KEY)

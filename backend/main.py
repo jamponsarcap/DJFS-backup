@@ -1,3 +1,8 @@
+import datetime
+import hashlib
+import json
+import os
+
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import config
@@ -24,6 +29,64 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+_HASHES_FILE = os.path.join(os.path.dirname(__file__), "data", "uploaded_hashes.json")
+
+
+def _load_hashes() -> dict:
+    if os.path.exists(_HASHES_FILE):
+        with open(_HASHES_FILE) as f:
+            return json.load(f)
+    return {}
+
+
+def _save_hashes(hashes: dict) -> None:
+    with open(_HASHES_FILE, "w") as f:
+        json.dump(hashes, f, indent=2)
+
+
+def _check_duplicate(client_id: str, file_bytes: bytes) -> str | None:
+    """Return the original filename if this file was already uploaded, else None."""
+    file_hash = hashlib.sha256(file_bytes).hexdigest()
+    data = _load_hashes()
+    client = data.get(client_id, {})
+    return client.get("hashes", {}).get(file_hash)
+
+
+def _record_upload(client_id: str, file_bytes: bytes, filename: str, snapshot: dict) -> None:
+    file_hash = hashlib.sha256(file_bytes).hexdigest()
+    data = _load_hashes()
+    client = data.setdefault(client_id, {"hashes": {}, "last_upload": None})
+    # Migrate old flat-hash format if needed
+    if client and not isinstance(client, dict):
+        client = {"hashes": {}, "last_upload": None}
+        data[client_id] = client
+    client.setdefault("hashes", {})[file_hash] = filename
+    client["last_upload"] = {
+        "hash": file_hash,
+        "filename": filename,
+        "uploaded_at": datetime.datetime.utcnow().isoformat(),
+        "snapshot": snapshot,
+    }
+    _save_hashes(data)
+
+
+def _get_last_upload(client_id: str) -> dict | None:
+    data = _load_hashes()
+    return data.get(client_id, {}).get("last_upload")
+
+
+def _clear_last_upload(client_id: str) -> None:
+    """Remove snapshot + hash so the same doc can be re-uploaded after undo."""
+    data = _load_hashes()
+    client = data.get(client_id)
+    if not client:
+        return
+    last = client.get("last_upload")
+    if last:
+        client.get("hashes", {}).pop(last["hash"], None)
+        client["last_upload"] = None
+    _save_hashes(data)
 
 
 @app.get("/health")
@@ -75,13 +138,28 @@ async def upload_statement(client_id: str, file: UploadFile = File(...)):
     """
     Upload a bank statement PDF.
     Extracts transactions via Azure Document Intelligence,
-    then indexes the content into Azure AI Search for RAG.
+    writes them to the Fabric SQL database, and returns a diff
+    showing exactly what changed in the portfolio.
+    Rejects duplicate files (same content) for the same client.
     """
     if not file.filename.lower().endswith((".pdf", ".png", ".jpg", ".jpeg")):
         raise HTTPException(status_code=400, detail="Only PDF and image files are supported")
 
     contents = await file.read()
+
+    original = _check_duplicate(client_id, contents)
+    if original:
+        raise HTTPException(
+            status_code=409,
+            detail=f'This document has already been uploaded (original: "{original}"). '
+                   "Upload a different statement to update the portfolio.",
+        )
+
     extraction = await doc_intel_service.extract_statement(contents, file.filename)
+    result = await fabric_service.apply_statement(client_id, extraction)
+
+    snapshot = result.pop("_snapshot", {"accounts": [], "cash_flows": {}})
+    _record_upload(client_id, contents, file.filename, snapshot)
 
     chunks = [
         {"text": f"{t['date']} {t['description']} {t['amount']}", "page": None}
@@ -94,4 +172,25 @@ async def upload_statement(client_id: str, file: UploadFile = File(...)):
         status="processed",
         extracted_transactions=len(extraction["transactions"]),
         summary=extraction["summary"],
+        diff=result,
     )
+
+
+@app.get("/api/upload-statement/{client_id}/last")
+async def get_last_upload(client_id: str):
+    """Return metadata about the last uploaded statement for this client, or null."""
+    last = _get_last_upload(client_id)
+    if not last:
+        return None
+    return {"filename": last["filename"], "uploaded_at": last["uploaded_at"]}
+
+
+@app.post("/api/upload-statement/{client_id}/undo")
+async def undo_last_upload(client_id: str):
+    """Revert the DB changes from the most recent statement upload."""
+    last = _get_last_upload(client_id)
+    if not last:
+        raise HTTPException(status_code=404, detail="No upload to undo for this client.")
+    await fabric_service.undo_statement(client_id, last["snapshot"])
+    _clear_last_upload(client_id)
+    return {"status": "undone", "filename": last["filename"]}

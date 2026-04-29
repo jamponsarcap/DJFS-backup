@@ -19,3 +19,6 @@ azure-ai-documentintelligence==1.0.0b3
 
 # Microsoft Fabric / SQL (pure Python, no ODBC driver required)
 python-tds==1.15.0
+
+# Local PDF parsing (fallback when Azure Document Intelligence is not configured)
+pdfplumber==0.11.4

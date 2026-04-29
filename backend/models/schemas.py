@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Dict
 
 
 class Client(BaseModel):
@@ -79,11 +79,34 @@ class InsightsResponse(BaseModel):
     generated_at: str
 
 
+class AccountChange(BaseModel):
+    account_name: str
+    before: float
+    after: float
+    delta: float
+
+
+class CashFlowChange(BaseModel):
+    inflow_delta: float
+    outflow_delta: float
+    net_delta: float
+
+
+class StatementDiff(BaseModel):
+    total_value_before: float
+    total_value_after: float
+    total_value_delta: float
+    account_changes: Dict[str, AccountChange]
+    cash_flow_changes: Dict[str, CashFlowChange]
+    transactions_count: int
+
+
 class DocumentUploadResponse(BaseModel):
     filename: str
     status: str
     extracted_transactions: int
     summary: str
+    diff: Optional[StatementDiff] = None
 
 
 class ServiceStatus(BaseModel):

@@ -11,8 +11,9 @@ import CashFlowChart from './components/CashFlowChart'
 import RiskAlerts from './components/RiskAlerts'
 import InsightsSummary from './components/InsightsSummary'
 import DocumentUpload from './components/DocumentUpload'
+import StatementDiffModal from './components/StatementDiffModal'
 import { fetchClients, fetchPortfolio, fetchStatus } from './api/client'
-import type { Client, PortfolioData, ServiceStatus } from './types'
+import type { Client, PortfolioData, ServiceStatus, DocumentUploadResponse } from './types'
 
 export default function App() {
   const [clients, setClients] = useState<Client[]>([])
@@ -21,12 +22,16 @@ export default function App() {
   const [status, setStatus] = useState<ServiceStatus | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [diffResult, setDiffResult] = useState<DocumentUploadResponse | null>(null)
 
   useEffect(() => {
     fetchClients()
       .then(data => {
         setClients(data)
-        if (data.length > 0) setSelected(data[0])
+        if (data.length === 0) return
+        const savedId = localStorage.getItem('rm_selected_client')
+        const restored = savedId ? data.find(c => c.id === savedId) : null
+        setSelected(restored ?? data[0])
       })
       .catch(() => setError('Cannot reach backend. Start the FastAPI server on port 8000.'))
 
@@ -35,15 +40,30 @@ export default function App() {
       .catch(() => {/* status is optional */})
   }, [])
 
-  useEffect(() => {
-    if (!selected) return
+  const handleSelectClient = (client: Client) => {
+    localStorage.setItem('rm_selected_client', client.id)
+    setSelected(client)
+  }
+
+  const loadPortfolio = (clientId: string) => {
     setLoading(true)
     setError(null)
-    fetchPortfolio(selected.id)
+    fetchPortfolio(clientId)
       .then(setPortfolio)
       .catch(() => setError('Failed to load portfolio data.'))
       .finally(() => setLoading(false))
+  }
+
+  useEffect(() => {
+    if (!selected) return
+    loadPortfolio(selected.id)
   }, [selected])
+
+  const handleUploadComplete = (result: DocumentUploadResponse) => {
+    setDiffResult(result)
+    // Re-fetch portfolio to reflect the DB changes
+    if (selected) loadPortfolio(selected.id)
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -62,7 +82,7 @@ export default function App() {
 
           <div className="flex items-center gap-6 flex-wrap">
             <StatusBar status={status} />
-            <ClientSelector clients={clients} selected={selected} onSelect={setSelected} />
+            <ClientSelector clients={clients} selected={selected} onSelect={handleSelectClient} />
           </div>
         </div>
       </header>
@@ -99,6 +119,9 @@ export default function App() {
               </div>
             </div>
 
+            {/* AI Briefing — primary feature, shown first */}
+            <InsightsSummary clientId={portfolio.client_id} />
+
             {/* KPI row */}
             <KpiCards data={portfolio} />
 
@@ -120,10 +143,13 @@ export default function App() {
               <RiskAlerts alerts={portfolio.risk_alerts} />
             </div>
 
-            {/* AI Briefing + Document upload */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <InsightsSummary clientId={portfolio.client_id} />
-              <DocumentUpload clientId={portfolio.client_id} />
+            {/* Document upload */}
+            <div className="w-full">
+              <DocumentUpload
+                clientId={portfolio.client_id}
+                onUploadComplete={handleUploadComplete}
+                onUndoComplete={() => selected && loadPortfolio(selected.id)}
+              />
             </div>
           </>
         )}
@@ -134,6 +160,15 @@ export default function App() {
           RM Insights · Team DJ FS · Agentic Industry Hackathon 2026 · Capgemini
         </span>
       </footer>
+
+      {/* Diff modal — shown after a successful upload */}
+      {diffResult?.diff && (
+        <StatementDiffModal
+          filename={diffResult.filename}
+          diff={diffResult.diff}
+          onClose={() => setDiffResult(null)}
+        />
+      )}
     </div>
   )
 }
