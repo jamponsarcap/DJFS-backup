@@ -16,6 +16,8 @@ AZURE_DOC_INTEL_KEY = os.getenv("AZURE_DOC_INTEL_KEY", "")
 
 FABRIC_SERVER = os.getenv("FABRIC_SERVER", "")
 FABRIC_DATABASE = os.getenv("FABRIC_DATABASE", "")
+FABRIC_WORKSPACE_NAME = os.getenv("FABRIC_WORKSPACE_NAME", "")
+FABRIC_LAKEHOUSE_NAME = os.getenv("FABRIC_LAKEHOUSE_NAME", "")
 
 MARKET_DATA_API_KEY = os.getenv("MARKET_DATA_API_KEY", "")
 
@@ -28,6 +30,9 @@ def _is_set(value: str) -> bool:
 # A service is "live" only when all its required env vars are set and not placeholders
 def fabric_enabled() -> bool:
     return _is_set(FABRIC_SERVER) and _is_set(FABRIC_DATABASE)
+
+def lakehouse_files_enabled() -> bool:
+    return _is_set(FABRIC_WORKSPACE_NAME) and _is_set(FABRIC_LAKEHOUSE_NAME)
 
 def openai_enabled() -> bool:
     return _is_set(AZURE_OPENAI_ENDPOINT) and _is_set(AZURE_OPENAI_API_KEY)

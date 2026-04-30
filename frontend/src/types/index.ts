@@ -111,4 +111,5 @@ export interface DocumentUploadResponse {
   extracted_transactions: number
   summary: string
   diff?: StatementDiff
+  lakehouse_path?: string
 }

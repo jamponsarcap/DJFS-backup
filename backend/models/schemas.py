@@ -107,6 +107,7 @@ class DocumentUploadResponse(BaseModel):
     extracted_transactions: int
     summary: str
     diff: Optional[StatementDiff] = None
+    lakehouse_path: Optional[str] = None
 
 
 class ServiceStatus(BaseModel):

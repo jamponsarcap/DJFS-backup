@@ -63,9 +63,17 @@ class SearchService:
             print(f"[SearchService] Mock: would index {len(chunks)} chunks from {filename}")
             return
 
+        if not chunks:
+            print(f"[SearchService] No chunks to index for {filename}, skipping")
+            return
+
+        import re
+        # AI Search keys allow only letters, digits, underscore, dash, equals sign
+        safe_name = re.sub(r"[^a-zA-Z0-9_\-=]", "_", filename)
+
         documents = [
             {
-                "id": f"{client_id}_{filename}_{i}",
+                "id": f"{client_id}_{safe_name}_{i}",
                 "client_id": client_id,
                 "content": chunk["text"],
                 "source": filename,

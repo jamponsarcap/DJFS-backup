@@ -21,7 +21,9 @@ export const uploadStatement = (clientId: string, file: File): Promise<DocumentU
   return api.post(`/upload-statement/${clientId}`, form).then(r => r.data)
 }
 
-export const fetchLastUpload = (clientId: string): Promise<{ filename: string; uploaded_at: string } | null> =>
+export const fetchLastUpload = (
+  clientId: string
+): Promise<{ filename: string; uploaded_at: string; lakehouse_path?: string } | null> =>
   api.get(`/upload-statement/${clientId}/last`).then(r => r.data)
 
 export const undoLastUpload = (clientId: string): Promise<{ status: string; filename: string }> =>

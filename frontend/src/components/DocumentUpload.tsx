@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Upload, FileText, RotateCcw, AlertTriangle } from 'lucide-react'
+import { Upload, FileText, RotateCcw, AlertTriangle, Database } from 'lucide-react'
 import { uploadStatement, fetchLastUpload, undoLastUpload } from '../api/client'
 import type { DocumentUploadResponse } from '../types'
 
@@ -13,6 +13,7 @@ const STEPS = [
   'Uploading document…',
   'Extracting transactions with Azure Document Intelligence…',
   'Updating portfolio database…',
+  'Saving to Microsoft Fabric Lakehouse…',
   'Finalising changes…',
 ]
 
@@ -22,7 +23,7 @@ export default function DocumentUpload({ clientId, onUploadComplete, onUndoCompl
   const [stepIndex, setStepIndex] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
-  const [lastUpload, setLastUpload] = useState<{ filename: string; uploaded_at: string } | null>(null)
+  const [lastUpload, setLastUpload] = useState<{ filename: string; uploaded_at: string; lakehouse_path?: string } | null>(null)
   const [confirmUndo, setConfirmUndo] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const stepTimer = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -58,7 +59,11 @@ export default function DocumentUpload({ clientId, onUploadComplete, onUndoCompl
     startStepAnimation()
     try {
       const res = await uploadStatement(clientId, file)
-      setLastUpload({ filename: res.filename, uploaded_at: new Date().toISOString() })
+      setLastUpload({
+        filename: res.filename,
+        uploaded_at: new Date().toISOString(),
+        lakehouse_path: res.lakehouse_path,
+      })
       onUploadComplete(res)
     } catch (err: any) {
       const detail = err?.response?.data?.detail
@@ -168,6 +173,14 @@ export default function DocumentUpload({ clientId, onUploadComplete, onUndoCompl
                 <p className="text-xs text-amber-600 mt-0.5">
                   {new Date(lastUpload.uploaded_at).toLocaleString()}
                 </p>
+                {lastUpload.lakehouse_path && (
+                  <div className="flex items-center gap-1 mt-1">
+                    <Database size={11} className="text-teal-600 flex-shrink-0" />
+                    <p className="text-xs text-teal-700 font-mono truncate" title={lastUpload.lakehouse_path}>
+                      {lastUpload.lakehouse_path}
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
             {!confirmUndo && (

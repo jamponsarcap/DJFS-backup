@@ -4,7 +4,18 @@
     "last_upload": null
   },
   "cli_001": {
-    "hashes": {},
-    "last_upload": null
+    "hashes": {
+      "0e6c7185f970c62293b290fd12231d40ffdedcf326da51a429e03bc2417a3b02": "Synthetic_Bank_Statement_Sarah_Chen_v2 1.pdf"
+    },
+    "last_upload": {
+      "hash": "0e6c7185f970c62293b290fd12231d40ffdedcf326da51a429e03bc2417a3b02",
+      "filename": "Synthetic_Bank_Statement_Sarah_Chen_v2 1.pdf",
+      "uploaded_at": "2026-04-30T15:52:33.890855",
+      "snapshot": {
+        "accounts": [],
+        "cash_flows": {}
+      },
+      "lakehouse_path": null
+    }
   }
 }

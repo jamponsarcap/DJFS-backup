@@ -1,10 +1,13 @@
+import asyncio
 import datetime
 import hashlib
 import json
 import os
+import traceback
 
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, Request, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 import config
 
 from models.schemas import (
@@ -14,6 +17,7 @@ from models.schemas import (
 from services.fabric_service import fabric_service
 from services.document_intel_service import doc_intel_service
 from services.search_service import search_service
+from services.lakehouse_storage_service import lakehouse_storage_service
 from agents.portfolio_agent import portfolio_agent
 
 app = FastAPI(
@@ -21,6 +25,13 @@ app = FastAPI(
     description="AI-powered portfolio intelligence for Relationship Managers",
     version="1.0.0",
 )
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    tb = traceback.format_exc()
+    print(f"[ERROR] Unhandled exception on {request.method} {request.url}\n{tb}")
+    return JSONResponse(status_code=500, content={"detail": str(exc)})
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -53,7 +64,13 @@ def _check_duplicate(client_id: str, file_bytes: bytes) -> str | None:
     return client.get("hashes", {}).get(file_hash)
 
 
-def _record_upload(client_id: str, file_bytes: bytes, filename: str, snapshot: dict) -> None:
+def _record_upload(
+    client_id: str,
+    file_bytes: bytes,
+    filename: str,
+    snapshot: dict,
+    lakehouse_path: str | None = None,
+) -> None:
     file_hash = hashlib.sha256(file_bytes).hexdigest()
     data = _load_hashes()
     client = data.setdefault(client_id, {"hashes": {}, "last_upload": None})
@@ -67,6 +84,7 @@ def _record_upload(client_id: str, file_bytes: bytes, filename: str, snapshot: d
         "filename": filename,
         "uploaded_at": datetime.datetime.utcnow().isoformat(),
         "snapshot": snapshot,
+        "lakehouse_path": lakehouse_path,
     }
     _save_hashes(data)
 
@@ -159,13 +177,30 @@ async def upload_statement(client_id: str, file: UploadFile = File(...)):
     result = await fabric_service.apply_statement(client_id, extraction)
 
     snapshot = result.pop("_snapshot", {"accounts": [], "cash_flows": {}})
-    _record_upload(client_id, contents, file.filename, snapshot)
+
+    # Store the raw file in the Lakehouse Files/ section (non-fatal, 45 s timeout)
+    try:
+        lakehouse_path = await asyncio.wait_for(
+            lakehouse_storage_service.upload_file(client_id, file.filename, contents),
+            timeout=45.0,
+        )
+    except asyncio.TimeoutError:
+        print("[upload] Lakehouse upload timed out (browser auth not completed) — continuing")
+        lakehouse_path = None
+    except Exception as e:
+        print(f"[upload] Lakehouse upload error (non-fatal): {e}")
+        lakehouse_path = None
+
+    _record_upload(client_id, contents, file.filename, snapshot, lakehouse_path)
 
     chunks = [
         {"text": f"{t['date']} {t['description']} {t['amount']}", "page": None}
         for t in extraction["transactions"]
     ]
-    await search_service.index_document(client_id, file.filename, chunks)
+    try:
+        await search_service.index_document(client_id, file.filename, chunks)
+    except Exception as e:
+        print(f"[upload] Search indexing failed (non-fatal): {e}")
 
     return DocumentUploadResponse(
         filename=file.filename,
@@ -173,6 +208,7 @@ async def upload_statement(client_id: str, file: UploadFile = File(...)):
         extracted_transactions=len(extraction["transactions"]),
         summary=extraction["summary"],
         diff=result,
+        lakehouse_path=lakehouse_path,
     )
 
 
@@ -182,7 +218,11 @@ async def get_last_upload(client_id: str):
     last = _get_last_upload(client_id)
     if not last:
         return None
-    return {"filename": last["filename"], "uploaded_at": last["uploaded_at"]}
+    return {
+        "filename": last["filename"],
+        "uploaded_at": last["uploaded_at"],
+        "lakehouse_path": last.get("lakehouse_path"),
+    }
 
 
 @app.post("/api/upload-statement/{client_id}/undo")
