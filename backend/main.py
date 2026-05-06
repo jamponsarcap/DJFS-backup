@@ -3,7 +3,9 @@ import datetime
 import hashlib
 import json
 import os
+import time
 import traceback
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,10 +23,47 @@ from services.lakehouse_storage_service import lakehouse_storage_service
 from agents.portfolio_agent import portfolio_agent
 from services.market_data_service import market_data_service
 
+_last_market_refresh: float = 0.0
+_REFRESH_COOLDOWN = 60.0  # seconds
+
+
+async def _do_market_refresh() -> dict:
+    global _last_market_refresh
+    market_data_service.clear_cache()
+    _last_market_refresh = time.time()
+
+    clients = await fabric_service.get_clients()
+    total_updated = 0
+    for client in clients:
+        data = await fabric_service.get_portfolio_data(client["id"])
+        if not data:
+            continue
+        holdings = data.get("holdings", [])
+        if holdings:
+            enriched = await market_data_service.enrich_holdings_with_market_data(holdings)
+            total_updated += await fabric_service.update_holdings_market_data(client["id"], enriched)
+
+    refreshed_at = datetime.datetime.utcnow().isoformat() + "Z"
+    next_allowed = datetime.datetime.utcfromtimestamp(_last_market_refresh + _REFRESH_COOLDOWN).isoformat() + "Z"
+    return {"refreshed_at": refreshed_at, "next_refresh_allowed": next_allowed, "holdings_updated": total_updated}
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    print("[startup] Running initial market data refresh…")
+    try:
+        result = await _do_market_refresh()
+        print(f"[startup] Market data refreshed: {result['holdings_updated']} holdings updated in DB")
+    except Exception as e:
+        print(f"[startup] Market data refresh failed (non-fatal): {e}")
+    yield
+
+
 app = FastAPI(
     title="RM Insights API",
     description="AI-powered portfolio intelligence for Relationship Managers",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 @app.exception_handler(Exception)
@@ -216,6 +255,68 @@ async def upload_statement(client_id: str, file: UploadFile = File(...)):
         diff=result,
         lakehouse_path=lakehouse_path,
     )
+
+
+@app.get("/api/holdings-history/{client_id}")
+async def get_holdings_history(client_id: str):
+    """Weekly price history for all non-cash holdings, normalised to % change from first point."""
+    data = await fabric_service.get_portfolio_data(client_id)
+    if not data:
+        raise HTTPException(status_code=404, detail=f"Client {client_id} not found")
+
+    holdings = [h for h in data.get("holdings", []) if h.get("asset_class") != "cash"]
+
+    raw: dict[str, dict] = {}
+    for h in holdings:
+        symbol = h["symbol"]
+        hist = await market_data_service.get_price_history(symbol)
+        if hist:
+            raw[symbol] = {"name": h["name"], "asset_class": h["asset_class"], "history": hist}
+
+    if not raw:
+        return {"dates": [], "series": []}
+
+    min_len = min(len(v["history"]) for v in raw.values())
+    all_dates: list[str] = []
+    series = []
+    for symbol, info in raw.items():
+        hist = info["history"][-min_len:]
+        if not all_dates:
+            all_dates = [e["date"] for e in hist]
+        first = hist[0]["price"]
+        if first == 0:
+            continue
+        series.append({
+            "symbol": symbol,
+            "name": info["name"],
+            "asset_class": info["asset_class"],
+            "values": [round((e["price"] / first - 1) * 100, 2) for e in hist],
+        })
+
+    return {"dates": all_dates, "series": series}
+
+
+@app.post("/api/market-data/refresh")
+async def refresh_market_data():
+    """Clear the price cache, fetch fresh market data for all clients, and persist to DB."""
+    global _last_market_refresh
+    elapsed = time.time() - _last_market_refresh
+    if _last_market_refresh > 0 and elapsed < _REFRESH_COOLDOWN:
+        wait = int(_REFRESH_COOLDOWN - elapsed) + 1
+        raise HTTPException(status_code=429, detail=f"Please wait {wait}s before refreshing again.")
+    return await _do_market_refresh()
+
+
+@app.get("/api/market-data/refresh-status")
+async def refresh_status():
+    """Returns when the last refresh happened and when the next one is allowed."""
+    if _last_market_refresh == 0:
+        return {"last_refreshed": None, "next_refresh_allowed": None, "cooldown_remaining": 0}
+    elapsed = time.time() - _last_market_refresh
+    cooldown_remaining = max(0, int(_REFRESH_COOLDOWN - elapsed))
+    last = datetime.datetime.utcfromtimestamp(_last_market_refresh).isoformat() + "Z"
+    next_allowed = datetime.datetime.utcfromtimestamp(_last_market_refresh + _REFRESH_COOLDOWN).isoformat() + "Z"
+    return {"last_refreshed": last, "next_refresh_allowed": next_allowed, "cooldown_remaining": cooldown_remaining}
 
 
 @app.get("/api/upload-statement/{client_id}/last")

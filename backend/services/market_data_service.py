@@ -59,6 +59,7 @@ class MarketDataService:
     def __init__(self):
         self._live = config.market_data_enabled()
         self._quote_cache: dict[str, dict[str, Any]] = {}
+        self._history_cache: dict[str, list[dict]] = {}
         self._ssl_context = self._create_ssl_context()
         if not self._live:
             print("[MarketDataService] Running in mock mode (MARKET_DATA_API_KEY not set)")
@@ -259,6 +260,61 @@ class MarketDataService:
             return float(value)
         except (TypeError, ValueError):
             return None
+
+    def clear_cache(self) -> None:
+        self._quote_cache.clear()
+        self._history_cache.clear()
+
+    async def get_price_history(self, symbol: str, periods: int = 26) -> list[dict]:
+        """Return the last `periods` weekly closing prices as [{"date": "YYYY-MM-DD", "price": float}]."""
+        clean = self._clean_symbol(symbol)
+        if not clean or clean == "CASH":
+            return []
+
+        if clean in self._history_cache:
+            return self._history_cache[clean]
+
+        if not self._live:
+            result = self._mock_price_history(clean, periods)
+        else:
+            provider_symbol = SYMBOL_OVERRIDES.get(clean, clean)
+            data = await self._request_alpha_vantage({
+                "function": "TIME_SERIES_WEEKLY",
+                "symbol": provider_symbol,
+                "apikey": config.MARKET_DATA_API_KEY,
+            })
+            if not data:
+                result = self._mock_price_history(clean, periods)
+            else:
+                weekly = data.get("Weekly Time Series", {})
+                dates = sorted(weekly.keys(), reverse=True)[:periods]
+                dates.reverse()
+                result = [{"date": d, "price": float(weekly[d]["4. close"])} for d in dates]
+
+        self._history_cache[clean] = result
+        return result
+
+    def _mock_price_history(self, symbol: str, periods: int) -> list[dict]:
+        import random
+        import datetime as dt
+
+        base_price = MOCK_PRICES.get(symbol)
+        if base_price is None:
+            return []
+
+        rng = random.Random(hash(symbol))
+        is_bond = symbol in ("UK10Y", "UK5Y", "US30Y", "EU5Y")
+        weekly_vol = 0.008 if is_bond else 0.022
+
+        prices = [base_price]
+        for _ in range(periods - 1):
+            prices.append(prices[-1] / (1 + rng.gauss(0, weekly_vol)))
+        prices.reverse()
+
+        today = dt.date.today()
+        start = today - dt.timedelta(weeks=periods - 1)
+        dates = [(start + dt.timedelta(weeks=i)).isoformat() for i in range(periods)]
+        return [{"date": d, "price": round(p, 4)} for d, p in zip(dates, prices)]
 
     def _create_ssl_context(self) -> ssl.SSLContext:
         if truststore is not None:

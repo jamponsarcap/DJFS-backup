@@ -183,10 +183,10 @@ class FabricService:
         # Holdings
         cur.execute("""
             SELECT symbol, name, asset_class, quantity,
-                   0.0 AS current_price,
+                   current_price,
                    market_value,
-                   0.0 AS cost_basis,
-                   0.0 AS gain_loss,
+                   cost_basis,
+                   gain_loss,
                    gain_loss_pct, weight
             FROM dbo.holdings WHERE client_id = ? ORDER BY weight DESC
         """, (client_id,))
@@ -383,6 +383,32 @@ class FabricService:
             # Stored by main.py for undo — not exposed in the API response
             "_snapshot": {"accounts": acc_snapshot, "cash_flows": cf_snapshot},
         }
+
+    async def update_holdings_market_data(self, client_id: str, holdings: list[dict]) -> int:
+        """Write fresh market prices back to dbo.holdings. Returns number of rows updated."""
+        if not self._live:
+            return 0
+
+        total_market_value = sum(_f(h.get("market_value", 0)) for h in holdings)
+
+        cur = self._cursor()
+        updated = 0
+        for h in holdings:
+            symbol = h.get("symbol")
+            if not symbol or h.get("asset_class") == "cash":
+                continue
+            price = _f(h.get("current_price", 0))
+            if price <= 0:
+                continue
+            new_weight = round(_f(h["market_value"]) / total_market_value * 100, 2) if total_market_value else _f(h.get("weight", 0))
+            cur.execute("""
+                UPDATE dbo.holdings
+                SET current_price = ?, market_value = ?, gain_loss = ?, gain_loss_pct = ?, weight = ?
+                WHERE client_id = ? AND symbol = ?
+            """, (price, _f(h.get("market_value", 0)), _f(h.get("gain_loss", 0)),
+                  _f(h.get("gain_loss_pct", 0)), new_weight, client_id, symbol))
+            updated += 1
+        return updated
 
     async def undo_statement(self, client_id: str, snapshot: dict) -> None:
         """Restore account balances and cash flow rows to their pre-upload state."""
