@@ -4,6 +4,7 @@ python-dotenv==1.0.1
 pydantic==2.7.1
 httpx==0.27.0
 certifi==2024.6.2
+truststore==0.10.1
 python-multipart==0.0.9
 
 # Azure OpenAI
@@ -17,8 +18,8 @@ azure-identity==1.16.0
 # Azure Document Intelligence
 azure-ai-documentintelligence==1.0.0b3
 
-# Microsoft Fabric / SQL (pure Python, no ODBC driver required)
-python-tds==1.15.0
+# Microsoft Fabric / SQL
+mssql-python==1.6.0
 
 # Microsoft Fabric / OneLake file storage (ADLS Gen2 DFS API)
 azure-storage-file-datalake==12.15.0

@@ -14,8 +14,11 @@ AZURE_SEARCH_INDEX = os.getenv("AZURE_SEARCH_INDEX", "portfolio-docs")
 AZURE_DOC_INTEL_ENDPOINT = os.getenv("AZURE_DOC_INTEL_ENDPOINT", "")
 AZURE_DOC_INTEL_KEY = os.getenv("AZURE_DOC_INTEL_KEY", "")
 
+CLOUDLABS_ID = os.getenv("CLOUDLABS_ID", "")
 FABRIC_SERVER = os.getenv("FABRIC_SERVER", "")
 FABRIC_DATABASE = os.getenv("FABRIC_DATABASE", "")
+FABRIC_CONNECTION_STRING = os.getenv("FABRIC_CONNECTION_STRING", "")
+FABRIC_AUTHENTICATION = os.getenv("FABRIC_AUTHENTICATION", "ActiveDirectoryInteractive")
 FABRIC_WORKSPACE_NAME = os.getenv("FABRIC_WORKSPACE_NAME", "")
 FABRIC_LAKEHOUSE_NAME = os.getenv("FABRIC_LAKEHOUSE_NAME", "")
 
@@ -29,7 +32,7 @@ def _is_set(value: str) -> bool:
 
 # A service is "live" only when all its required env vars are set and not placeholders
 def fabric_enabled() -> bool:
-    return _is_set(FABRIC_SERVER) and _is_set(FABRIC_DATABASE)
+    return _is_set(FABRIC_CONNECTION_STRING) or (_is_set(FABRIC_SERVER) and _is_set(FABRIC_DATABASE))
 
 def lakehouse_files_enabled() -> bool:
     return _is_set(FABRIC_WORKSPACE_NAME) and _is_set(FABRIC_LAKEHOUSE_NAME)

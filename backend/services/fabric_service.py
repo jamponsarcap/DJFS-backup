@@ -25,6 +25,10 @@ def _f(val) -> float:
         return 0.0
 
 
+def _row_to_dict(row, columns: list[str]) -> dict:
+    return {column: row[index] for index, column in enumerate(columns)}
+
+
 def _mock_statement_diff(transactions: list[dict]) -> dict:
     """Compute a realistic diff dict from transactions without touching the DB."""
     monthly: dict[str, dict] = defaultdict(lambda: {"inflow": 0.0, "outflow": 0.0})
@@ -79,25 +83,51 @@ class FabricService:
                 print(f"[FabricService] Could not connect to Fabric ({e}) – falling back to mock data")
                 self._live = False
         else:
-            print("[FabricService] Running in mock mode (FABRIC_SERVER not set)")
+            print("[FabricService] Running in mock mode (Fabric connection settings not set)")
 
     def _connect(self):
-        from azure.identity import InteractiveBrowserCredential
-        import pytds
-        import certifi
+        from mssql_python import connect as sql_connect
 
-        credential = InteractiveBrowserCredential()
-        token = credential.get_token("https://database.windows.net/.default")
+        try:
+            self._conn = sql_connect(self._build_connection_string(), autocommit=True)
+            print("[FabricService] Connected to Fabric SQL via Microsoft driver")
+        except Exception as e:
+            raise ConnectionError(f"Failed to connect to Fabric SQL: {e}") from e
 
-        self._conn = pytds.connect(
-            server=config.FABRIC_SERVER,
-            database=config.FABRIC_DATABASE,
-            access_token_callable=lambda: token.token,
-            autocommit=True,
-            cafile=certifi.where(),
-            as_dict=True,
+    def _build_connection_string(self) -> str:
+        if config.FABRIC_CONNECTION_STRING:
+            return config.FABRIC_CONNECTION_STRING
+
+        server = config.FABRIC_SERVER.strip()
+        user_id = config.CLOUDLABS_ID.strip()
+        if not server.lower().startswith("tcp:"):
+            server = f"tcp:{server}"
+        if "," not in server:
+            server = f"{server},1433"
+
+        connection_string = (
+            f"Server={server};"
+            f"Database={config.FABRIC_DATABASE};"
+            "Encrypt=yes;"
+            "TrustServerCertificate=no;"
+            f"Authentication={config.FABRIC_AUTHENTICATION};"
         )
-        print("[FabricService] Connected to Fabric SQL via Entra ID token")
+
+        if user_id:
+            connection_string += f"UID={user_id};"
+
+        return connection_string
+
+    def _fetchone_dict(self, cur):
+        row = cur.fetchone()
+        if row is None:
+            return None
+        columns = [col[0] for col in (cur.description or [])]
+        return _row_to_dict(row, columns)
+
+    def _fetchall_dicts(self, cur) -> list[dict]:
+        columns = [col[0] for col in (cur.description or [])]
+        return [_row_to_dict(row, columns) for row in cur.fetchall()]
 
     def _cursor(self):
         try:
@@ -122,7 +152,7 @@ class FabricService:
             FROM dbo.clients
             ORDER BY client_name
         """)
-        return list(cur.fetchall())
+        return self._fetchall_dicts(cur)
 
     async def get_portfolio_data(self, client_id: str) -> dict | None:
         if not self._live:
@@ -133,9 +163,9 @@ class FabricService:
         # Client
         cur.execute("""
             SELECT client_id, client_name
-            FROM dbo.clients WHERE client_id = %s
+            FROM dbo.clients WHERE client_id = ?
         """, (client_id,))
-        row = cur.fetchone()
+        row = self._fetchone_dict(cur)
         if not row:
             return None
         portfolio = {"client_id": row["client_id"], "client_name": row["client_name"]}
@@ -144,10 +174,10 @@ class FabricService:
         cur.execute("""
             SELECT account_id AS id, account_type AS type,
                    account_name AS name, balance, currency
-            FROM dbo.accounts WHERE client_id = %s ORDER BY account_type
+            FROM dbo.accounts WHERE client_id = ? ORDER BY account_type
         """, (client_id,))
         portfolio["accounts"] = [
-            {**r, "balance": _f(r["balance"])} for r in cur.fetchall()
+            {**r, "balance": _f(r["balance"])} for r in self._fetchall_dicts(cur)
         ]
 
         # Holdings
@@ -158,12 +188,12 @@ class FabricService:
                    0.0 AS cost_basis,
                    0.0 AS gain_loss,
                    gain_loss_pct, weight
-            FROM dbo.holdings WHERE client_id = %s ORDER BY weight DESC
+            FROM dbo.holdings WHERE client_id = ? ORDER BY weight DESC
         """, (client_id,))
         holdings = [
             {k: _f(v) if k not in ("symbol", "name", "asset_class") else v
              for k, v in r.items()}
-            for r in cur.fetchall()
+            for r in self._fetchall_dicts(cur)
         ]
         portfolio["holdings"] = holdings
 
@@ -175,9 +205,9 @@ class FabricService:
         cur.execute("""
             SELECT CONVERT(VARCHAR(7), period_date, 120) AS date,
                    portfolio_value, benchmark_value
-            FROM dbo.performance WHERE client_id = %s ORDER BY period_date
+            FROM dbo.performance WHERE client_id = ? ORDER BY period_date
         """, (client_id,))
-        perf_rows = cur.fetchall()
+        perf_rows = self._fetchall_dicts(cur)
         portfolio["performance"] = [
             {"date": r["date"],
              "portfolio_value": _f(r["portfolio_value"]),
@@ -211,22 +241,22 @@ class FabricService:
         cur.execute("""
             SELECT CONCAT(month_label, ' ', year) AS month, inflow, outflow, net
             FROM dbo.cash_flows
-            WHERE client_id = %s
+            WHERE client_id = ?
             ORDER BY year, month_num
         """, (client_id,))
         portfolio["cash_flows"] = [
             {"month": r["month"], "inflow": _f(r["inflow"]),
              "outflow": _f(r["outflow"]), "net": _f(r["net"])}
-            for r in cur.fetchall()
+            for r in self._fetchall_dicts(cur)
         ]
 
         # Risk alerts
         cur.execute("""
             SELECT level, category, message FROM dbo.risk_alerts
-            WHERE client_id = %s
+            WHERE client_id = ?
             ORDER BY CASE level WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END
         """, (client_id,))
-        portfolio["risk_alerts"] = list(cur.fetchall())
+        portfolio["risk_alerts"] = self._fetchall_dicts(cur)
 
         # Allocation
         alloc: dict[str, float] = {"equity": 0.0, "fixed_income": 0.0, "cash": 0.0, "alternatives": 0.0}
@@ -254,11 +284,11 @@ class FabricService:
         # Snapshot accounts before
         cur.execute("""
             SELECT account_id, account_name, balance
-            FROM dbo.accounts WHERE client_id = %s
+            FROM dbo.accounts WHERE client_id = ?
         """, (client_id,))
         accounts_before = {
             r["account_id"]: {"name": r["account_name"], "balance": _f(r["balance"])}
-            for r in cur.fetchall()
+            for r in self._fetchall_dicts(cur)
         }
         total_before = sum(v["balance"] for v in accounts_before.values())
 
@@ -283,9 +313,9 @@ class FabricService:
 
             cur.execute("""
                 SELECT inflow, outflow FROM dbo.cash_flows
-                WHERE client_id = %s AND year = %s AND month_num = %s
+                WHERE client_id = ? AND year = ? AND month_num = ?
             """, (client_id, year_val, month_num))
-            existing = cur.fetchone()
+            existing = self._fetchone_dict(cur)
 
             if existing:
                 cf_snapshot[snap_key] = {
@@ -299,8 +329,8 @@ class FabricService:
                 new_outflow = _f(existing["outflow"]) + cf["outflow"]
                 cur.execute("""
                     UPDATE dbo.cash_flows
-                    SET inflow = %s, outflow = %s, net = %s
-                    WHERE client_id = %s AND year = %s AND month_num = %s
+                    SET inflow = ?, outflow = ?, net = ?
+                    WHERE client_id = ? AND year = ? AND month_num = ?
                 """, (new_inflow, new_outflow, new_inflow - new_outflow,
                       client_id, year_val, month_num))
             else:
@@ -311,7 +341,7 @@ class FabricService:
                 cur.execute("""
                     INSERT INTO dbo.cash_flows
                         (client_id, year, month_num, month_label, inflow, outflow, net)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                 """, (client_id, year_val, month_num, month_label,
                       cf["inflow"], cf["outflow"], net))
 
@@ -332,7 +362,7 @@ class FabricService:
             acc_snapshot.append({"id": first_id, "balance_before": acc["balance"]})
             new_balance = acc["balance"] + total_net
             cur.execute("""
-                UPDATE dbo.accounts SET balance = %s WHERE account_id = %s
+                UPDATE dbo.accounts SET balance = ? WHERE account_id = ?
             """, (new_balance, first_id))
             account_changes[first_id] = {
                 "account_name": acc["name"],
@@ -363,7 +393,7 @@ class FabricService:
 
         for acc in snapshot.get("accounts", []):
             cur.execute(
-                "UPDATE dbo.accounts SET balance = %s WHERE account_id = %s",
+                "UPDATE dbo.accounts SET balance = ? WHERE account_id = ?",
                 (acc["balance_before"], acc["id"]),
             )
 
@@ -372,13 +402,13 @@ class FabricService:
             if not cf["existed"]:
                 cur.execute("""
                     DELETE FROM dbo.cash_flows
-                    WHERE client_id = %s AND year = %s AND month_num = %s
+                    WHERE client_id = ? AND year = ? AND month_num = ?
                 """, (client_id, year_val, month_num))
             else:
                 cur.execute("""
                     UPDATE dbo.cash_flows
-                    SET inflow = %s, outflow = %s, net = %s
-                    WHERE client_id = %s AND year = %s AND month_num = %s
+                    SET inflow = ?, outflow = ?, net = ?
+                    WHERE client_id = ? AND year = ? AND month_num = ?
                 """, (cf["inflow"], cf["outflow"], cf["net"],
                       client_id, year_val, month_num))
 

@@ -19,6 +19,7 @@ from services.document_intel_service import doc_intel_service
 from services.search_service import search_service
 from services.lakehouse_storage_service import lakehouse_storage_service
 from agents.portfolio_agent import portfolio_agent
+from services.market_data_service import market_data_service
 
 app = FastAPI(
     title="RM Insights API",
@@ -135,6 +136,11 @@ async def get_portfolio(client_id: str):
     data = await fabric_service.get_portfolio_data(client_id)
     if not data:
         raise HTTPException(status_code=404, detail=f"Client {client_id} not found")
+
+    holdings = data.get("holdings", [])
+    if holdings:
+        data["holdings"] = await market_data_service.enrich_holdings_with_market_data(holdings)
+
     return data
 
 

@@ -96,7 +96,7 @@ export default function App() {
           </div>
         )}
 
-        {loading && (
+        {loading && !portfolio && (
           <div className="flex items-center justify-center py-24">
             <div className="flex items-center gap-3 text-gray-400">
               <RefreshCw size={20} className="animate-spin" />
@@ -105,7 +105,7 @@ export default function App() {
           </div>
         )}
 
-        {portfolio && !loading && (
+        {portfolio && (
           <>
             {/* Client header */}
             <div className="flex items-center justify-between">
@@ -117,6 +117,12 @@ export default function App() {
                   Last review: {selected?.last_review}
                 </p>
               </div>
+              {loading && (
+                <div className="flex items-center gap-2 text-sm text-gray-400">
+                  <RefreshCw size={16} className="animate-spin" />
+                  <span>Refreshing…</span>
+                </div>
+              )}
             </div>
 
             {/* AI Briefing — primary feature, shown first */}

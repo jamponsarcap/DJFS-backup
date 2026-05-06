@@ -1,7 +1,17 @@
 import type { Holding } from '../types'
 
+const localeForCurrency = (currency: string) => currency === 'USD' ? 'en-US' : 'en-GB'
+
 const fmt = (n: number, currency: string) =>
-  new Intl.NumberFormat('en-GB', { style: 'currency', currency, maximumFractionDigits: 0 }).format(n)
+  new Intl.NumberFormat(localeForCurrency(currency), { style: 'currency', currency, maximumFractionDigits: 0 }).format(n)
+
+const fmtPrice = (n: number, currency: string) =>
+  new Intl.NumberFormat(localeForCurrency(currency), {
+    style: 'currency',
+    currency,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(n)
 
 const classColors: Record<string, string> = {
   equity:       'bg-blue-100 text-blue-700',
@@ -17,6 +27,29 @@ const classLabels: Record<string, string> = {
   alternatives: 'Alts',
 }
 
+const USD_PRICE_SYMBOLS = new Set(['AAPL', 'AMZN', 'GOLD', 'INTU', 'MSFT', 'NVDA', 'US30Y'])
+const GBP_PRICE_SYMBOLS = new Set(['GSK', 'INFRA', 'MMKT', 'REUK', 'SHRY', 'UK10Y', 'UK5Y', 'VOD'])
+
+function getHoldingPriceCurrency(holding: Holding, portfolioCurrency: string) {
+  const symbol = holding.symbol.toUpperCase()
+  const name = holding.name.toLowerCase()
+
+  if (USD_PRICE_SYMBOLS.has(symbol)) return 'USD'
+  if (GBP_PRICE_SYMBOLS.has(symbol)) return 'GBP'
+
+  if (
+    name.includes('uk ') ||
+    name.includes('gilt') ||
+    name.includes('sterling') ||
+    name.includes('plc') ||
+    name.includes('reit')
+  ) {
+    return 'GBP'
+  }
+
+  return portfolioCurrency
+}
+
 interface Props { holdings: Holding[]; currency: string }
 
 export default function HoldingsTable({ holdings, currency }: Props) {
@@ -30,13 +63,17 @@ export default function HoldingsTable({ holdings, currency }: Props) {
             <tr className="text-left text-xs text-gray-400 border-b border-gray-100">
               <th className="pb-2 font-medium">Symbol</th>
               <th className="pb-2 font-medium">Class</th>
+              <th className="pb-2 font-medium text-right">Current Price</th>
               <th className="pb-2 font-medium text-right">Market Value</th>
               <th className="pb-2 font-medium text-right">Weight</th>
               <th className="pb-2 font-medium text-right">Gain / Loss</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
-            {sorted.map(h => (
+            {sorted.map(h => {
+              const rowCurrency = getHoldingPriceCurrency(h, currency)
+
+              return (
               <tr key={h.symbol} className="hover:bg-gray-50 transition-colors">
                 <td className="py-2.5 pr-3">
                   <div className="font-medium text-gray-900">{h.symbol}</div>
@@ -47,13 +84,16 @@ export default function HoldingsTable({ holdings, currency }: Props) {
                     {classLabels[h.asset_class] ?? h.asset_class}
                   </span>
                 </td>
-                <td className="py-2.5 text-right font-medium text-gray-900">{fmt(h.market_value, currency)}</td>
+                <td className="py-2.5 text-right font-medium text-gray-700">
+                  {h.asset_class === 'cash' ? 'N/A' : fmtPrice(h.current_price, rowCurrency)}
+                </td>
+                <td className="py-2.5 text-right font-medium text-gray-900">{fmt(h.market_value, rowCurrency)}</td>
                 <td className="py-2.5 text-right text-gray-500">{h.weight.toFixed(1)}%</td>
                 <td className={`py-2.5 text-right font-medium ${h.gain_loss >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
                   {h.gain_loss >= 0 ? '+' : ''}{h.gain_loss_pct.toFixed(1)}%
                 </td>
               </tr>
-            ))}
+            )})}
           </tbody>
         </table>
       </div>
