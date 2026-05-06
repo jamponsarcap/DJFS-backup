@@ -28,3 +28,33 @@ export const fetchLastUpload = (
 
 export const undoLastUpload = (clientId: string): Promise<{ status: string; filename: string }> =>
   api.post(`/upload-statement/${clientId}/undo`).then(r => r.data)
+
+export interface MarketRefreshResult {
+  refreshed_at: string
+  next_refresh_allowed: string
+  holdings_updated: number
+}
+
+export const refreshMarketData = (): Promise<MarketRefreshResult> =>
+  api.post('/market-data/refresh').then(r => r.data)
+
+export interface HoldingsHistorySeries {
+  symbol: string
+  name: string
+  asset_class: string
+  values: number[]
+}
+
+export interface HoldingsHistory {
+  dates: string[]
+  series: HoldingsHistorySeries[]
+}
+
+export const fetchHoldingsHistory = (clientId: string): Promise<HoldingsHistory> =>
+  api.get(`/holdings-history/${clientId}`).then(r => r.data)
+
+export const fetchRefreshStatus = (): Promise<{
+  last_refreshed: string | null
+  next_refresh_allowed: string | null
+  cooldown_remaining: number
+}> => api.get('/market-data/refresh-status').then(r => r.data)

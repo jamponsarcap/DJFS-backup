@@ -12,7 +12,8 @@ import RiskAlerts from './components/RiskAlerts'
 import InsightsSummary from './components/InsightsSummary'
 import DocumentUpload from './components/DocumentUpload'
 import StatementDiffModal from './components/StatementDiffModal'
-import { fetchClients, fetchPortfolio, fetchStatus } from './api/client'
+import HoldingsTrendChart from './components/HoldingsTrendChart'
+import { fetchClients, fetchPortfolio, fetchStatus, refreshMarketData, fetchRefreshStatus } from './api/client'
 import type { Client, PortfolioData, ServiceStatus, DocumentUploadResponse } from './types'
 
 export default function App() {
@@ -23,6 +24,47 @@ export default function App() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [diffResult, setDiffResult] = useState<DocumentUploadResponse | null>(null)
+  const [marketRefreshing, setMarketRefreshing] = useState(false)
+  const [lastRefreshed, setLastRefreshed] = useState<string | null>(null)
+  const [nextRefreshAt, setNextRefreshAt] = useState<number | null>(null)
+  const [cooldownSecs, setCooldownSecs] = useState(0)
+
+  useEffect(() => {
+    fetchRefreshStatus().then(s => {
+      if (s.last_refreshed) setLastRefreshed(s.last_refreshed)
+      if (s.next_refresh_allowed) {
+        const next = new Date(s.next_refresh_allowed).getTime()
+        if (next > Date.now()) setNextRefreshAt(next)
+      }
+    }).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    if (!nextRefreshAt) return
+    const tick = () => {
+      const secs = Math.max(0, Math.ceil((nextRefreshAt - Date.now()) / 1000))
+      setCooldownSecs(secs)
+      if (secs === 0) setNextRefreshAt(null)
+    }
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [nextRefreshAt])
+
+  const handleMarketRefresh = async () => {
+    setMarketRefreshing(true)
+    try {
+      const result = await refreshMarketData()
+      setLastRefreshed(result.refreshed_at)
+      setNextRefreshAt(new Date(result.next_refresh_allowed).getTime())
+      if (selected) loadPortfolio(selected.id)
+    } catch (err: any) {
+      const msg = err?.response?.data?.detail ?? 'Market data refresh failed.'
+      setError(msg)
+    } finally {
+      setMarketRefreshing(false)
+    }
+  }
 
   useEffect(() => {
     fetchClients()
@@ -141,7 +183,20 @@ export default function App() {
             <PerformanceChart data={portfolio.performance} />
 
             {/* Holdings */}
-            <HoldingsTable holdings={portfolio.holdings} currency={portfolio.accounts[0]?.currency ?? 'GBP'} />
+            <HoldingsTable
+              holdings={portfolio.holdings}
+              currency={portfolio.accounts[0]?.currency ?? 'GBP'}
+              onRefresh={handleMarketRefresh}
+              refreshing={marketRefreshing}
+              cooldownSecs={cooldownSecs}
+              lastRefreshed={lastRefreshed}
+            />
+
+            {/* Holdings price trend */}
+            <HoldingsTrendChart
+              clientId={portfolio.client_id}
+              refreshTrigger={lastRefreshed}
+            />
 
             {/* Cash flow + Risk alerts */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

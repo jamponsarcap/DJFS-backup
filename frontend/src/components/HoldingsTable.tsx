@@ -1,3 +1,4 @@
+import { RefreshCw } from 'lucide-react'
 import type { Holding } from '../types'
 
 const localeForCurrency = (currency: string) => currency === 'USD' ? 'en-US' : 'en-GB'
@@ -50,13 +51,39 @@ function getHoldingPriceCurrency(holding: Holding, portfolioCurrency: string) {
   return portfolioCurrency
 }
 
-interface Props { holdings: Holding[]; currency: string }
+interface Props {
+  holdings: Holding[]
+  currency: string
+  onRefresh?: () => void
+  refreshing?: boolean
+  cooldownSecs?: number
+  lastRefreshed?: string | null
+}
 
-export default function HoldingsTable({ holdings, currency }: Props) {
+export default function HoldingsTable({ holdings, currency, onRefresh, refreshing, cooldownSecs = 0, lastRefreshed }: Props) {
   const sorted = [...holdings].sort((a, b) => b.market_value - a.market_value)
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-      <h3 className="text-sm font-semibold text-gray-700 mb-4">Holdings</h3>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-sm font-semibold text-gray-700">Holdings</h3>
+        {onRefresh && (
+          <div className="flex flex-col items-end gap-0.5">
+            <button
+              onClick={onRefresh}
+              disabled={refreshing || cooldownSecs > 0}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors
+                bg-teal-600 text-white hover:bg-teal-700
+                disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
+            >
+              <RefreshCw size={12} className={refreshing ? 'animate-spin' : ''} />
+              {refreshing ? 'Refreshing…' : cooldownSecs > 0 ? `Refresh in ${cooldownSecs}s` : 'Refresh Market Data'}
+            </button>
+            {lastRefreshed && (
+              <span className="text-xs text-gray-400">Last: {new Date(lastRefreshed).toLocaleTimeString()}</span>
+            )}
+          </div>
+        )}
+      </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
