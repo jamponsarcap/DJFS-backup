@@ -112,4 +112,5 @@ export interface DocumentUploadResponse {
   summary: string
   diff?: StatementDiff
   lakehouse_path?: string
+  indexer_triggered?: boolean
 }

@@ -13,6 +13,7 @@ import InsightsSummary from './components/InsightsSummary'
 import DocumentUpload from './components/DocumentUpload'
 import StatementDiffModal from './components/StatementDiffModal'
 import HoldingsTrendChart from './components/HoldingsTrendChart'
+import DocumentList from './components/DocumentList'
 import { fetchClients, fetchPortfolio, fetchStatus, refreshMarketData, fetchRefreshStatus } from './api/client'
 import type { Client, PortfolioData, ServiceStatus, DocumentUploadResponse } from './types'
 
@@ -28,6 +29,7 @@ export default function App() {
   const [lastRefreshed, setLastRefreshed] = useState<string | null>(null)
   const [nextRefreshAt, setNextRefreshAt] = useState<number | null>(null)
   const [cooldownSecs, setCooldownSecs] = useState(0)
+  const [docListKey, setDocListKey] = useState(0)
 
   useEffect(() => {
     fetchRefreshStatus().then(s => {
@@ -103,7 +105,7 @@ export default function App() {
 
   const handleUploadComplete = (result: DocumentUploadResponse) => {
     setDiffResult(result)
-    // Re-fetch portfolio to reflect the DB changes
+    setDocListKey(k => k + 1)
     if (selected) loadPortfolio(selected.id)
   }
 
@@ -204,12 +206,16 @@ export default function App() {
               <RiskAlerts alerts={portfolio.risk_alerts} />
             </div>
 
-            {/* Document upload */}
-            <div className="w-full">
+            {/* Document upload + Lakehouse document list */}
+            <div className="w-full grid grid-cols-1 lg:grid-cols-2 gap-6">
               <DocumentUpload
                 clientId={portfolio.client_id}
                 onUploadComplete={handleUploadComplete}
                 onUndoComplete={() => selected && loadPortfolio(selected.id)}
+              />
+              <DocumentList
+                clientId={portfolio.client_id}
+                refreshKey={docListKey}
               />
             </div>
           </>

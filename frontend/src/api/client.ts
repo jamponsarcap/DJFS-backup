@@ -53,6 +53,26 @@ export interface HoldingsHistory {
 export const fetchHoldingsHistory = (clientId: string): Promise<HoldingsHistory> =>
   api.get(`/holdings-history/${clientId}`).then(r => r.data)
 
+export interface LakehouseDocument {
+  path: string
+  name: string
+  size: number
+  last_modified: string | null
+  locked: boolean
+}
+
+export const fetchDocuments = (clientId: string): Promise<LakehouseDocument[]> =>
+  api.get(`/documents/${clientId}`).then(r => r.data)
+
+export const lockDocument = (clientId: string, path: string): Promise<{ locked: boolean }> =>
+  api.post(`/documents/${clientId}/lock`, { path }).then(r => r.data)
+
+export const unlockDocument = (clientId: string, path: string): Promise<{ locked: boolean }> =>
+  api.post(`/documents/${clientId}/unlock`, { path }).then(r => r.data)
+
+export const deleteDocument = (clientId: string, path: string): Promise<{ deleted: boolean }> =>
+  api.post(`/documents/${clientId}/delete`, { path }).then(r => r.data)
+
 export const fetchRefreshStatus = (): Promise<{
   last_refreshed: string | null
   next_refresh_allowed: string | null

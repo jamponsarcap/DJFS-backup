@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Upload, FileText, RotateCcw, AlertTriangle, Database } from 'lucide-react'
+import { Upload, FileText, RotateCcw, AlertTriangle, Database, Search } from 'lucide-react'
 import { uploadStatement, fetchLastUpload, undoLastUpload } from '../api/client'
 import type { DocumentUploadResponse } from '../types'
 
@@ -25,6 +25,7 @@ export default function DocumentUpload({ clientId, onUploadComplete, onUndoCompl
   const [dragging, setDragging] = useState(false)
   const [lastUpload, setLastUpload] = useState<{ filename: string; uploaded_at: string; lakehouse_path?: string } | null>(null)
   const [confirmUndo, setConfirmUndo] = useState(false)
+  const [indexerTriggered, setIndexerTriggered] = useState<boolean | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const stepTimer = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -32,6 +33,7 @@ export default function DocumentUpload({ clientId, onUploadComplete, onUndoCompl
     fetchLastUpload(clientId).then(setLastUpload).catch(() => setLastUpload(null))
     setError(null)
     setConfirmUndo(false)
+    setIndexerTriggered(null)
   }, [clientId])
 
   useEffect(() => {
@@ -64,6 +66,7 @@ export default function DocumentUpload({ clientId, onUploadComplete, onUndoCompl
         uploaded_at: new Date().toISOString(),
         lakehouse_path: res.lakehouse_path,
       })
+      setIndexerTriggered(res.indexer_triggered ?? false)
       onUploadComplete(res)
     } catch (err: any) {
       const detail = err?.response?.data?.detail
@@ -159,6 +162,19 @@ export default function DocumentUpload({ clientId, onUploadComplete, onUndoCompl
       )}
 
       {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
+
+      {indexerTriggered !== null && !loading && (
+        <div className={`mt-3 flex items-center gap-2 text-xs rounded-lg px-3 py-2
+          ${indexerTriggered
+            ? 'bg-emerald-50 text-emerald-700'
+            : 'bg-gray-50 text-gray-500'}`}
+        >
+          <Search size={12} />
+          {indexerTriggered
+            ? 'Search indexer triggered — new content will be searchable shortly'
+            : 'Search indexer not configured — chunks pushed directly to index'}
+        </div>
+      )}
 
       {/* Undo last upload */}
       {lastUpload && !busy && (

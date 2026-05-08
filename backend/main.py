@@ -7,6 +7,7 @@ import time
 import traceback
 from contextlib import asynccontextmanager
 
+import pydantic
 from fastapi import FastAPI, Request, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -50,12 +51,8 @@ async def _do_market_refresh() -> dict:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print("[startup] Running initial market data refresh…")
-    try:
-        result = await _do_market_refresh()
-        print(f"[startup] Market data refreshed: {result['holdings_updated']} holdings updated in DB")
-    except Exception as e:
-        print(f"[startup] Market data refresh failed (non-fatal): {e}")
+    if config.market_data_enabled():
+        print("[startup] Skipping auto market refresh — use the Refresh Market Data button to avoid exhausting API quota")
     yield
 
 
@@ -82,6 +79,7 @@ app.add_middleware(
 )
 
 _HASHES_FILE = os.path.join(os.path.dirname(__file__), "data", "uploaded_hashes.json")
+_LOCKS_FILE  = os.path.join(os.path.dirname(__file__), "data", "locked_files.json")
 
 
 def _load_hashes() -> dict:
@@ -94,6 +92,18 @@ def _load_hashes() -> dict:
 def _save_hashes(hashes: dict) -> None:
     with open(_HASHES_FILE, "w") as f:
         json.dump(hashes, f, indent=2)
+
+
+def _load_locks() -> set:
+    if os.path.exists(_LOCKS_FILE):
+        with open(_LOCKS_FILE) as f:
+            return set(json.load(f))
+    return set()
+
+
+def _save_locks(locks: set) -> None:
+    with open(_LOCKS_FILE, "w") as f:
+        json.dump(list(locks), f, indent=2)
 
 
 def _check_duplicate(client_id: str, file_bytes: bytes) -> str | None:
@@ -247,6 +257,8 @@ async def upload_statement(client_id: str, file: UploadFile = File(...)):
     except Exception as e:
         print(f"[upload] Search indexing failed (non-fatal): {e}")
 
+    indexer_triggered = await search_service.trigger_indexer()
+
     return DocumentUploadResponse(
         filename=file.filename,
         status="processed",
@@ -254,6 +266,7 @@ async def upload_statement(client_id: str, file: UploadFile = File(...)):
         summary=extraction["summary"],
         diff=result,
         lakehouse_path=lakehouse_path,
+        indexer_triggered=indexer_triggered,
     )
 
 
@@ -296,6 +309,48 @@ async def get_holdings_history(client_id: str):
     return {"dates": all_dates, "series": series}
 
 
+class _PathBody(pydantic.BaseModel):
+    path: str
+
+
+@app.get("/api/documents/{client_id}")
+async def list_documents(client_id: str):
+    """List all uploaded documents for a client from OneLake, with lock status."""
+    files = await lakehouse_storage_service.list_files(client_id)
+    locks = _load_locks()
+    for f in files:
+        f["locked"] = f["path"] in locks
+    return files
+
+
+@app.post("/api/documents/{client_id}/lock")
+async def lock_document(client_id: str, body: _PathBody):
+    locks = _load_locks()
+    locks.add(body.path)
+    _save_locks(locks)
+    return {"locked": True, "path": body.path}
+
+
+@app.post("/api/documents/{client_id}/unlock")
+async def unlock_document(client_id: str, body: _PathBody):
+    locks = _load_locks()
+    locks.discard(body.path)
+    _save_locks(locks)
+    return {"locked": False, "path": body.path}
+
+
+@app.post("/api/documents/{client_id}/delete")
+async def delete_document(client_id: str, body: _PathBody):
+    locks = _load_locks()
+    if body.path in locks:
+        raise HTTPException(status_code=403, detail="Document is locked. Unlock it before deleting.")
+    deleted = await lakehouse_storage_service.delete_file(body.path)
+    locks.discard(body.path)
+    _save_locks(locks)
+    await search_service.trigger_indexer()
+    return {"deleted": deleted, "path": body.path}
+
+
 @app.post("/api/market-data/refresh")
 async def refresh_market_data():
     """Clear the price cache, fetch fresh market data for all clients, and persist to DB."""
@@ -334,10 +389,11 @@ async def get_last_upload(client_id: str):
 
 @app.post("/api/upload-statement/{client_id}/undo")
 async def undo_last_upload(client_id: str):
-    """Revert the DB changes from the most recent statement upload."""
+    """Revert the DB changes from the most recent statement upload and delete the file from OneLake."""
     last = _get_last_upload(client_id)
     if not last:
         raise HTTPException(status_code=404, detail="No upload to undo for this client.")
     await fabric_service.undo_statement(client_id, last["snapshot"])
+    lakehouse_deleted = await lakehouse_storage_service.delete_file(last.get("lakehouse_path"))
     _clear_last_upload(client_id)
-    return {"status": "undone", "filename": last["filename"]}
+    return {"status": "undone", "filename": last["filename"], "lakehouse_deleted": lakehouse_deleted}

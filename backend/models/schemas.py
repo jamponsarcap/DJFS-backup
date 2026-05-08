@@ -108,6 +108,7 @@ class DocumentUploadResponse(BaseModel):
     summary: str
     diff: Optional[StatementDiff] = None
     lakehouse_path: Optional[str] = None
+    indexer_triggered: bool = False
 
 
 class ServiceStatus(BaseModel):

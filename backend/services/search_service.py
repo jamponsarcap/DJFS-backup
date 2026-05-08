@@ -4,6 +4,7 @@ Searches indexed bank statements and financial documents for a given client.
 Falls back to mock context when not configured.
 """
 
+import asyncio
 import config
 
 
@@ -83,6 +84,41 @@ class SearchService:
         ]
         self._client.upload_documents(documents=documents)
         print(f"[SearchService] Indexed {len(documents)} chunks from {filename}")
+
+    async def trigger_indexer(self) -> bool:
+        """
+        Trigger an on-demand indexer run so newly uploaded files in OneLake
+        are picked up and searchable immediately.
+        Returns True if the indexer was accepted (202), False otherwise.
+        """
+        if not self._live or not config._is_set(config.AZURE_SEARCH_INDEXER_NAME):
+            print("[SearchService] Indexer trigger skipped (not configured)")
+            return False
+
+        def _run():
+            from azure.search.documents.indexes import SearchIndexerClient
+            from azure.core.credentials import AzureKeyCredential
+            from azure.core.exceptions import HttpResponseError
+
+            client = SearchIndexerClient(
+                endpoint=config.AZURE_SEARCH_ENDPOINT,
+                credential=AzureKeyCredential(config.AZURE_SEARCH_ADMIN_KEY),
+            )
+            try:
+                client.run_indexer(config.AZURE_SEARCH_INDEXER_NAME)
+                print(f"[SearchService] Indexer '{config.AZURE_SEARCH_INDEXER_NAME}' triggered (202 Accepted)")
+                return True
+            except HttpResponseError as e:
+                if e.status_code == 409:
+                    print(f"[SearchService] Indexer already running — skipping trigger")
+                    return False
+                raise
+
+        try:
+            return await asyncio.to_thread(_run)
+        except Exception as e:
+            print(f"[SearchService] Indexer trigger failed: {e}")
+            return False
 
 
 search_service = SearchService()
