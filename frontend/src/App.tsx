@@ -114,23 +114,35 @@ export default function App() {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       {/* ── Navbar ─────────────────────────────────────────────────────────── */}
-      <header style={{ backgroundColor: '#0A1628' }} className="shadow-lg">
-        <div className="max-w-screen-2xl mx-auto px-6 py-4 flex items-center justify-between gap-4 flex-wrap">
-          <div className="flex items-center gap-3">
-            <div className="bg-teal-500 p-2 rounded-lg">
-              <BarChart2 size={20} className="text-white" />
+      <header style={{ backgroundColor: '#0A1628' }} className="shadow-xl sticky top-0 z-30">
+        {/* Teal accent stripe */}
+        <div className="h-0.5 bg-gradient-to-r from-teal-500 via-teal-400 to-teal-600" />
+
+        {/* Main row */}
+        <div className="max-w-screen-2xl mx-auto px-6 py-3.5 flex items-center justify-between gap-4">
+          {/* Brand */}
+          <div className="flex items-center gap-3 shrink-0">
+            <div className="bg-gradient-to-br from-teal-400 to-teal-600 p-2 rounded-lg shadow-md">
+              <BarChart2 size={18} className="text-white" />
             </div>
-            <div>
-              <span className="text-white font-bold text-lg tracking-tight">RM Insights</span>
-              <span className="text-gray-400 text-xs ml-2">Portfolio Intelligence</span>
+            <div className="leading-tight">
+              <div className="text-white font-bold text-base tracking-tight">RM Insights</div>
+              <div className="text-teal-400 text-xs font-medium">Agentic Portfolio Intelligence</div>
             </div>
           </div>
 
-          <div className="flex items-center gap-6 flex-wrap">
-            <StatusBar status={status} />
-            <ClientSelector clients={clients} selected={selected} onSelect={handleSelectClient} />
-          </div>
+          {/* Client selector — right-aligned */}
+          <ClientSelector clients={clients} selected={selected} onSelect={handleSelectClient} />
         </div>
+
+        {/* Status sub-bar */}
+        {status && (
+          <div style={{ backgroundColor: '#071020' }} className="border-t border-white/5">
+            <div className="max-w-screen-2xl mx-auto px-6 py-1.5">
+              <StatusBar status={status} />
+            </div>
+          </div>
+        )}
       </header>
 
       {/* ── Main ───────────────────────────────────────────────────────────── */}
@@ -228,10 +240,36 @@ export default function App() {
         )}
       </main>
 
-      <footer style={{ backgroundColor: '#0A1628' }} className="text-center py-3">
-        <span className="text-gray-500 text-xs">
-          RM Insights · Team DJ FS · Agentic Industry Hackathon 2026 · Capgemini
-        </span>
+      <footer style={{ backgroundColor: '#071020' }} className="border-t border-white/5 mt-4">
+        <div className="max-w-screen-2xl mx-auto px-6 py-5 flex flex-col sm:flex-row items-center justify-between gap-4">
+
+          {/* Left — brand */}
+          <div className="flex items-center gap-3">
+            <div className="bg-gradient-to-br from-teal-400 to-teal-600 p-1.5 rounded-md">
+              <BarChart2 size={13} className="text-white" />
+            </div>
+            <div>
+              <div className="text-white text-sm font-bold leading-tight">RM Insights</div>
+              <div className="text-gray-500 text-xs mt-0.5">Agentic Industry Hackathon 2026</div>
+            </div>
+          </div>
+
+          {/* Centre — team */}
+          <div className="text-center">
+            <div className="text-gray-400 text-xs font-medium">Team DJ FS</div>
+            <div className="text-gray-600 text-xs mt-0.5">Capgemini · Powered by Microsoft Azure</div>
+          </div>
+
+          {/* Right — tech stack */}
+          <div className="flex items-center gap-2 flex-wrap justify-center sm:justify-end">
+            {['Azure AI Foundry', 'Microsoft Fabric', 'Azure OpenAI'].map(tag => (
+              <span key={tag} className="text-xs text-gray-500 border border-white/10 rounded px-2 py-0.5">
+                {tag}
+              </span>
+            ))}
+          </div>
+
+        </div>
       </footer>
 
       {/* Diff modal — shown after a successful upload */}

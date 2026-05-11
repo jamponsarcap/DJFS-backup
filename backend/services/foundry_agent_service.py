@@ -43,8 +43,20 @@ class FoundryAgentService:
 
     # ── Public API ────────────────────────────────────────────────────────────
 
-    async def run_summarization(self, client_id: str, client_name: str = "") -> dict:
-        """Call SummarizationAgent. Returns {narrative, key_points, data_sources}."""
+    async def run_summarization(
+        self,
+        client_id: str,
+        client_name: str = "",
+        portfolio: dict | None = None,
+        doc_context: list[dict] | None = None,
+    ) -> dict:
+        """
+        Call SummarizationAgent.
+
+        When portfolio data is provided the agent receives it directly in the message,
+        bypassing its Fabric tool calls (~5 min) and dropping response time to ~10s.
+        When no data is provided the agent fetches it itself (slow path).
+        """
         if not config.foundry_agent_enabled():
             return {
                 "narrative": "SummarizationAgent not configured — set AZURE_AI_AGENT_ID.",
@@ -53,27 +65,44 @@ class FoundryAgentService:
             }
 
         label = client_name or client_id
-        message = (
-            f"Please produce a portfolio summary for client: {label} (client_id: {client_id}).\n"
-            "Retrieve all data from Fabric SQL and Azure AI Search using your connected tools."
-        )
-        # 180s timeout — agent queries Fabric SQL + Azure AI Search which takes ~90-120s
+        if portfolio:
+            message = self._build_summary_message(label, client_id, portfolio, doc_context or [])
+        else:
+            message = (
+                f"Please produce a portfolio summary for client: {label} (client_id: {client_id}).\n"
+                "Retrieve all data from Fabric SQL and Azure AI Search using your connected tools."
+            )
+
         raw = await asyncio.get_event_loop().run_in_executor(
             None, self._run_sync, message, config.AZURE_AI_AGENT_ID, 180.0
         )
         return self._parse_summary(raw)
 
-    async def run_portfolio_insights(self, client_id: str, client_name: str = "") -> dict:
-        """Call PortfolioInsightsAgent. Returns the full structured JSON payload."""
+    async def run_portfolio_insights(
+        self,
+        client_id: str,
+        client_name: str = "",
+        portfolio: dict | None = None,
+        doc_context: list[dict] | None = None,
+    ) -> dict:
+        """
+        Call PortfolioInsightsAgent. Returns the full structured JSON payload.
+
+        When portfolio data is provided the agent skips its Fabric tool calls.
+        """
         if not config.foundry_portfolio_agent_enabled():
             return {"error": "PortfolioInsightsAgent not configured — set AZURE_AI_PORTFOLIO_AGENT_ID."}
 
         label = client_name or client_id
-        message = (
-            f"Generate the full portfolio insights payload for client: {label} (client_id: {client_id}).\n"
-            "Retrieve all data from Fabric SQL and Azure AI Search using your connected tools.\n"
-            "Return JSON ONLY — no markdown, no explanation."
-        )
+        if portfolio:
+            message = self._build_insights_message(label, client_id, portfolio, doc_context or [])
+        else:
+            message = (
+                f"Generate the full portfolio insights payload for client: {label} (client_id: {client_id}).\n"
+                "Retrieve all data from Fabric SQL and Azure AI Search using your connected tools.\n"
+                "Return JSON ONLY — no markdown, no explanation."
+            )
+
         raw = await asyncio.get_event_loop().run_in_executor(
             None, self._run_sync, message, config.AZURE_AI_PORTFOLIO_AGENT_ID, 120.0
         )
@@ -151,6 +180,50 @@ class FoundryAgentService:
                             return block["text"]["value"]
 
         return ""
+
+    # ── Message builders ──────────────────────────────────────────────────────
+
+    def _build_summary_message(
+        self, label: str, client_id: str, portfolio: dict, doc_context: list[dict]
+    ) -> str:
+        data = {
+            "client_name": portfolio.get("client_name"),
+            "client_id": client_id,
+            "total_value": portfolio.get("total_value"),
+            "total_return_pct": portfolio.get("total_return_pct"),
+            "ytd_return_pct": portfolio.get("ytd_return_pct"),
+            "allocation": portfolio.get("allocation"),
+            "top_holdings": portfolio.get("holdings", [])[:5],
+            "cash_flows": portfolio.get("cash_flows", [])[-3:],
+            "risk_alerts": portfolio.get("risk_alerts", []),
+            "accounts": portfolio.get("accounts", []),
+        }
+        msg = (
+            f"The following portfolio data has already been retrieved from Fabric SQL for "
+            f"client: {label} (client_id: {client_id}). "
+            "Use this data directly — do NOT call the Fabric tool again.\n\n"
+            f"PORTFOLIO DATA:\n{json.dumps(data, default=str)}"
+        )
+        if doc_context:
+            snippets = "\n".join(f"- [{d['source']}] {d['content']}" for d in doc_context)
+            msg += f"\n\nDOCUMENT CONTEXT (from Azure AI Search):\n{snippets}"
+        msg += "\n\nPlease produce the portfolio summary now."
+        return msg
+
+    def _build_insights_message(
+        self, label: str, client_id: str, portfolio: dict, doc_context: list[dict]
+    ) -> str:
+        msg = (
+            f"The following portfolio data has already been retrieved from Fabric SQL for "
+            f"client: {label} (client_id: {client_id}). "
+            "Use this data directly — do NOT call the Fabric tool again.\n\n"
+            f"PORTFOLIO DATA:\n{json.dumps(portfolio, default=str)}"
+        )
+        if doc_context:
+            snippets = "\n".join(f"- [{d['source']}] {d['content']}" for d in doc_context)
+            msg += f"\n\nDOCUMENT CONTEXT (from Azure AI Search):\n{snippets}"
+        msg += "\n\nGenerate the full portfolio insights JSON payload now. Return JSON ONLY."
+        return msg
 
     # ── Reply parsers ─────────────────────────────────────────────────────────
 

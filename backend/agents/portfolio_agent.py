@@ -32,21 +32,29 @@ class PortfolioAgent:
 
     async def _run_with_foundry(self, client_id: str) -> dict:
         """
-        Delegate entirely to SummarizationAgent.
-        We do a single lightweight Fabric call only to validate the client exists
-        and obtain the display name to pass to the agent.
+        Delegate to SummarizationAgent, passing pre-fetched data so the agent
+        skips its Fabric tool calls (~5 min) and responds in ~10s instead.
         """
         print(f"\n[Agent] Starting portfolio review for client: {client_id} (SummarizationAgent)")
 
-        print("[Agent] Step 1 – Validating client via Fabric …")
+        print("[Agent] Step 1 – Fetching portfolio data from Fabric …")
         portfolio = await fabric_service.get_portfolio_data(client_id)
         if not portfolio:
             raise ValueError(f"No portfolio data found for client {client_id}")
         client_name = portfolio.get("client_name", client_id)
-        print(f"[Agent]   → Client confirmed: {client_name}")
+        print(f"[Agent]   → {len(portfolio['holdings'])} holdings loaded for {client_name}")
 
-        print("[Agent] Step 2 – Dispatching to SummarizationAgent …")
-        insights = await foundry_agent_service.run_summarization(client_id, client_name)
+        print("[Agent] Step 2 – Searching Azure AI Search for document context …")
+        doc_context = await search_service.search_documents(
+            query=f"portfolio performance risk cashflow {client_name}",
+            client_id=client_id,
+        )
+        print(f"[Agent]   → {len(doc_context)} document chunks retrieved")
+
+        print("[Agent] Step 3 – Dispatching to SummarizationAgent (data pre-loaded) …")
+        insights = await foundry_agent_service.run_summarization(
+            client_id, client_name, portfolio=portfolio, doc_context=doc_context
+        )
         print(f"[Agent]   → Summary received ({len(insights['narrative'])} chars)")
 
         print("[Agent] Done.\n")

@@ -10,13 +10,17 @@ export default function AgentPortfolioInsights({ clientId }: Props) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showRaw, setShowRaw] = useState(false)
+  const [elapsed, setElapsed] = useState<number | null>(null)
 
   const run = async () => {
     setLoading(true)
     setError(null)
+    setElapsed(null)
+    const start = Date.now()
     try {
       const result = await fetchAgentPortfolio(clientId)
       setData(result)
+      setElapsed((Date.now() - start) / 1000)
     } catch (err: any) {
       const detail = err?.response?.data?.detail ?? 'Failed to run Portfolio Insights Agent.'
       setError(detail)
@@ -201,14 +205,21 @@ export default function AgentPortfolioInsights({ clientId }: Props) {
             </div>
           )}
 
-          {/* Expandable raw payload */}
-          <button
-            onClick={() => setShowRaw(s => !s)}
-            className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition-colors"
-          >
-            {showRaw ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-            {showRaw ? 'Hide' : 'View'} full agent payload
-          </button>
+          {/* Expandable raw payload + elapsed time */}
+          <div className="flex items-center justify-between">
+            <button
+              onClick={() => setShowRaw(s => !s)}
+              className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              {showRaw ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+              {showRaw ? 'Hide' : 'View'} full agent payload
+            </button>
+            {elapsed != null && (
+              <span className="text-xs text-gray-400">
+                Generated in {elapsed.toFixed(1)}s
+              </span>
+            )}
+          </div>
           {showRaw && (
             <pre className="text-xs bg-gray-50 border border-gray-200 rounded-lg p-3 overflow-auto max-h-96 whitespace-pre-wrap">
               {JSON.stringify(data, null, 2)}

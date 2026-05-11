@@ -261,9 +261,15 @@ async def get_agent_portfolio(client_id: str):
     if not portfolio:
         raise HTTPException(status_code=404, detail=f"Client {client_id} not found")
 
+    doc_context = await search_service.search_documents(
+        query=f"portfolio performance risk cashflow {portfolio.get('client_name', client_id)}",
+        client_id=client_id,
+    )
+
     try:
         result = await foundry_agent_service.run_portfolio_insights(
-            client_id, portfolio.get("client_name", client_id)
+            client_id, portfolio.get("client_name", client_id),
+            portfolio=portfolio, doc_context=doc_context,
         )
     except (TimeoutError, RuntimeError) as e:
         raise HTTPException(status_code=502, detail=str(e))
