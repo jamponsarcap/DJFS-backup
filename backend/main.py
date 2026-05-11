@@ -114,6 +114,15 @@ def _check_duplicate(client_id: str, file_bytes: bytes) -> str | None:
     return client.get("hashes", {}).get(file_hash)
 
 
+def _migrate_client(client: dict) -> None:
+    """In-place: promote old last_upload field into upload_history list."""
+    if "last_upload" in client:
+        old = client.pop("last_upload")
+        if old and isinstance(old, dict):
+            client.setdefault("upload_history", []).append(old)
+    client.setdefault("upload_history", [])
+
+
 def _record_upload(
     client_id: str,
     file_bytes: bytes,
@@ -123,38 +132,48 @@ def _record_upload(
 ) -> None:
     file_hash = hashlib.sha256(file_bytes).hexdigest()
     data = _load_hashes()
-    client = data.setdefault(client_id, {"hashes": {}, "last_upload": None})
-    # Migrate old flat-hash format if needed
-    if client and not isinstance(client, dict):
-        client = {"hashes": {}, "last_upload": None}
-        data[client_id] = client
-    client.setdefault("hashes", {})[file_hash] = filename
-    client["last_upload"] = {
+    if not isinstance(data.get(client_id), dict):
+        data[client_id] = {"hashes": {}, "upload_history": []}
+    client = data[client_id]
+    _migrate_client(client)
+    client["hashes"][file_hash] = filename
+    client["upload_history"].insert(0, {
         "hash": file_hash,
         "filename": filename,
         "uploaded_at": datetime.datetime.utcnow().isoformat(),
         "snapshot": snapshot,
         "lakehouse_path": lakehouse_path,
-    }
+    })
     _save_hashes(data)
+
+
+def _get_upload_history(client_id: str) -> list[dict]:
+    data = _load_hashes()
+    client = data.get(client_id, {})
+    if "upload_history" not in client and client.get("last_upload"):
+        return [client["last_upload"]]
+    return client.get("upload_history", [])
 
 
 def _get_last_upload(client_id: str) -> dict | None:
-    data = _load_hashes()
-    return data.get(client_id, {}).get("last_upload")
+    history = _get_upload_history(client_id)
+    return history[0] if history else None
 
 
-def _clear_last_upload(client_id: str) -> None:
-    """Remove snapshot + hash so the same doc can be re-uploaded after undo."""
+def _pop_last_upload(client_id: str) -> dict | None:
+    """Remove and return the most recent upload entry, also clearing its hash."""
     data = _load_hashes()
     client = data.get(client_id)
     if not client:
-        return
-    last = client.get("last_upload")
-    if last:
-        client.get("hashes", {}).pop(last["hash"], None)
-        client["last_upload"] = None
+        return None
+    _migrate_client(client)
+    history = client.get("upload_history", [])
+    if not history:
+        return None
+    last = history.pop(0)
+    client.get("hashes", {}).pop(last.get("hash", ""), None)
     _save_hashes(data)
+    return last
 
 
 @app.get("/health")
@@ -376,15 +395,15 @@ async def refresh_status():
 
 @app.get("/api/upload-statement/{client_id}/last")
 async def get_last_upload(client_id: str):
-    """Return metadata about the last uploaded statement for this client, or null."""
-    last = _get_last_upload(client_id)
-    if not last:
-        return None
-    return {
-        "filename": last["filename"],
-        "uploaded_at": last["uploaded_at"],
-        "lakehouse_path": last.get("lakehouse_path"),
-    }
+    """Return the full upload history for this client (newest first)."""
+    return [
+        {
+            "filename": e["filename"],
+            "uploaded_at": e["uploaded_at"],
+            "lakehouse_path": e.get("lakehouse_path"),
+        }
+        for e in _get_upload_history(client_id)
+    ]
 
 
 @app.post("/api/upload-statement/{client_id}/undo")
@@ -395,5 +414,5 @@ async def undo_last_upload(client_id: str):
         raise HTTPException(status_code=404, detail="No upload to undo for this client.")
     await fabric_service.undo_statement(client_id, last["snapshot"])
     lakehouse_deleted = await lakehouse_storage_service.delete_file(last.get("lakehouse_path"))
-    _clear_last_upload(client_id)
+    _pop_last_upload(client_id)
     return {"status": "undone", "filename": last["filename"], "lakehouse_deleted": lakehouse_deleted}

@@ -5,17 +5,9 @@
   },
   "cli_001": {
     "hashes": {
-      "b8456dece407c33c6cd2d728156b50eb5fa8e23342ebc88dc88609c969f2e74d": "Synthetic_Credit_Card_Statement_Sarah_Chen_FIXED.pdf"
+      "b8456dece407c33c6cd2d728156b50eb5fa8e23342ebc88dc88609c969f2e74d": "Synthetic_Credit_Card_Statement_Sarah_Chen_FIXED.pdf",
+      "8d379503ce67077c9f15b43ffa30a591629a50f76b0cf75939493cc2d1392b3f": "Synthetic_Fee_Statement_Sarah_Chen.pdf"
     },
-    "last_upload": {
-      "hash": "b8456dece407c33c6cd2d728156b50eb5fa8e23342ebc88dc88609c969f2e74d",
-      "filename": "Synthetic_Credit_Card_Statement_Sarah_Chen_FIXED.pdf",
-      "uploaded_at": "2026-05-08T19:15:35.358567",
-      "snapshot": {
-        "accounts": [],
-        "cash_flows": {}
-      },
-      "lakehouse_path": "Files/bank_statements/cli_001/20260508_191532_Synthetic_Credit_Card_Statement_Sarah_Chen_FIXED.pdf"
-    }
+    "last_upload": null
   }
 }
