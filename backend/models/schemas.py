@@ -117,3 +117,5 @@ class ServiceStatus(BaseModel):
     ai_search: bool
     doc_intelligence: bool
     market_data: bool
+    foundry_summarization_agent: bool
+    foundry_portfolio_agent: bool

@@ -81,6 +81,38 @@ export interface ServiceStatus {
   ai_search: boolean
   doc_intelligence: boolean
   market_data: boolean
+  foundry_summarization_agent: boolean
+  foundry_portfolio_agent: boolean
+}
+
+// PortfolioInsightsAgent response shape (top-level fields we display)
+export interface AgentPortfolioInsights {
+  client?: {
+    client_id: string
+    client_name: string
+    risk_tolerance: string
+    rm_name: string
+    last_review: string
+  }
+  as_of?: string
+  ui_metrics?: {
+    total_portfolio_value?: { value: number | null; currency: string }
+    total_return_pct?: { value: number | null; baseline_period_date: string | null }
+    ytd_return_pct?: { value: number | null; baseline_period_date: string | null; note?: string }
+  }
+  statement_insights?: {
+    documents_used?: { metadata_storage_name: string; metadata_storage_path: string; statement_date: string; statement_period: string }[]
+    highlights?: string[]
+  }
+  reconciliation_notes?: string[]
+  missing_data?: string[]
+  // full payload fields kept as unknown for expandable raw view
+  charts?: unknown
+  tables?: unknown
+  // error fallback from parse failure
+  error?: string
+  raw_response?: string
+  parse_error?: string
 }
 
 export interface AccountChange {

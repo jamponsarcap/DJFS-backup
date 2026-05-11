@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { Client, PortfolioData, InsightsResponse, ServiceStatus, DocumentUploadResponse } from '../types'
+import type { Client, PortfolioData, InsightsResponse, ServiceStatus, DocumentUploadResponse, AgentPortfolioInsights } from '../types'
 
 const api = axios.create({ baseURL: '/api' })
 
@@ -11,6 +11,9 @@ export const fetchPortfolio = (clientId: string): Promise<PortfolioData> =>
 
 export const fetchInsights = (clientId: string): Promise<InsightsResponse> =>
   api.get(`/insights/${clientId}`).then(r => r.data)
+
+export const fetchAgentPortfolio = (clientId: string): Promise<AgentPortfolioInsights> =>
+  api.get(`/agent-portfolio/${clientId}`).then(r => r.data)
 
 export const fetchStatus = (): Promise<ServiceStatus> =>
   api.get('/status').then(r => r.data)

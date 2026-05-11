@@ -3,11 +3,13 @@ import type { ServiceStatus } from '../types'
 interface Props { status: ServiceStatus | null }
 
 const services: { key: keyof ServiceStatus; label: string }[] = [
-  { key: 'fabric',           label: 'Fabric SQL' },
-  { key: 'openai',          label: 'Azure OpenAI' },
-  { key: 'ai_search',       label: 'AI Search' },
-  { key: 'doc_intelligence', label: 'Doc Intelligence' },
-  { key: 'market_data',     label: 'Market Data' },
+  { key: 'fabric',                       label: 'Fabric SQL' },
+  { key: 'openai',                       label: 'Azure OpenAI' },
+  { key: 'ai_search',                    label: 'AI Search' },
+  { key: 'doc_intelligence',             label: 'Doc Intelligence' },
+  { key: 'market_data',                  label: 'Market Data' },
+  { key: 'foundry_summarization_agent',  label: 'Summarization Agent' },
+  { key: 'foundry_portfolio_agent',      label: 'Portfolio Insights Agent' },
 ]
 
 export default function StatusBar({ status }: Props) {

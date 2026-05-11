@@ -26,6 +26,10 @@ FABRIC_LAKEHOUSE_NAME = os.getenv("FABRIC_LAKEHOUSE_NAME", "")
 
 MARKET_DATA_API_KEY = os.getenv("MARKET_DATA_API_KEY", "")
 
+AZURE_AI_PROJECT_ENDPOINT = os.getenv("AZURE_AI_PROJECT_ENDPOINT", "")
+AZURE_AI_AGENT_ID = os.getenv("AZURE_AI_AGENT_ID", "")           # SummarizationAgent
+AZURE_AI_PORTFOLIO_AGENT_ID = os.getenv("AZURE_AI_PORTFOLIO_AGENT_ID", "")  # PortfolioInsightsAgent
+
 FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")
 
 def _is_set(value: str) -> bool:
@@ -50,3 +54,9 @@ def doc_intel_enabled() -> bool:
 
 def market_data_enabled() -> bool:
     return _is_set(MARKET_DATA_API_KEY)
+
+def foundry_agent_enabled() -> bool:
+    return _is_set(AZURE_AI_PROJECT_ENDPOINT) and _is_set(AZURE_AI_AGENT_ID)
+
+def foundry_portfolio_agent_enabled() -> bool:
+    return _is_set(AZURE_AI_PROJECT_ENDPOINT) and _is_set(AZURE_AI_PORTFOLIO_AGENT_ID)

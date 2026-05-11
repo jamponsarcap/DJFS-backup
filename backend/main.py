@@ -22,6 +22,7 @@ from services.document_intel_service import doc_intel_service
 from services.search_service import search_service
 from services.lakehouse_storage_service import lakehouse_storage_service
 from agents.portfolio_agent import portfolio_agent
+from services.foundry_agent_service import foundry_agent_service
 from services.market_data_service import market_data_service
 
 _last_market_refresh: float = 0.0
@@ -205,6 +206,8 @@ async def service_status():
         ai_search=config.search_enabled(),
         doc_intelligence=config.doc_intel_enabled(),
         market_data=config.market_data_enabled(),
+        foundry_summarization_agent=config.foundry_agent_enabled(),
+        foundry_portfolio_agent=config.foundry_portfolio_agent_enabled(),
     )
 
 
@@ -230,13 +233,41 @@ async def get_portfolio(client_id: str):
 @app.get("/api/insights/{client_id}", response_model=InsightsResponse)
 async def get_insights(client_id: str):
     """
-    Run the Portfolio Intelligence Agent for a given client.
-    Orchestrates Fabric + RAG + market data + OpenAI narrative generation.
+    Advisor-facing narrative summary for a client.
+    Routes to SummarizationAgent (Foundry) when configured, otherwise falls back to Azure OpenAI.
     """
     try:
         result = await portfolio_agent.run(client_id)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+    return result
+
+
+@app.get("/api/agent-portfolio/{client_id}")
+async def get_agent_portfolio(client_id: str):
+    """
+    Full UI-ready portfolio insights payload produced by PortfolioInsightsAgent.
+    The agent queries Fabric SQL and Azure AI Search itself and returns structured JSON
+    with ui_metrics, charts, tables, statement_insights, and reconciliation_notes.
+    Requires AZURE_AI_PORTFOLIO_AGENT_ID to be configured.
+    """
+    if not config.foundry_portfolio_agent_enabled():
+        raise HTTPException(
+            status_code=503,
+            detail="PortfolioInsightsAgent not configured — set AZURE_AI_PORTFOLIO_AGENT_ID in .env",
+        )
+
+    portfolio = await fabric_service.get_portfolio_data(client_id)
+    if not portfolio:
+        raise HTTPException(status_code=404, detail=f"Client {client_id} not found")
+
+    try:
+        result = await foundry_agent_service.run_portfolio_insights(
+            client_id, portfolio.get("client_name", client_id)
+        )
+    except (TimeoutError, RuntimeError) as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
     return result
 
 
