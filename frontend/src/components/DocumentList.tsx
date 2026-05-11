@@ -6,6 +6,7 @@ import type { LakehouseDocument } from '../api/client'
 interface Props {
   clientId: string
   refreshKey?: number
+  onDelete?: (path: string) => void
 }
 
 function parseFilename(name: string): { displayName: string; uploadedAt: Date | null } {
@@ -25,7 +26,7 @@ function fmtSize(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
 
-export default function DocumentList({ clientId, refreshKey }: Props) {
+export default function DocumentList({ clientId, refreshKey, onDelete }: Props) {
   const [docs, setDocs] = useState<LakehouseDocument[]>([])
   const [loading, setLoading] = useState(true)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
@@ -58,6 +59,7 @@ export default function DocumentList({ clientId, refreshKey }: Props) {
     try {
       await deleteDocument(clientId, doc.path)
       setDocs(prev => prev.filter(d => d.path !== doc.path))
+      onDelete?.(doc.path)
     } catch (err: any) {
       alert(err?.response?.data?.detail ?? 'Delete failed.')
     } finally {
@@ -89,7 +91,7 @@ export default function DocumentList({ clientId, refreshKey }: Props) {
       {loading && (
         <div className="flex items-center justify-center py-8 text-gray-400 text-sm gap-2">
           <RefreshCw size={14} className="animate-spin" />
-          Loading documents…
+          Loading documents...
         </div>
       )}
 
@@ -115,7 +117,7 @@ export default function DocumentList({ clientId, refreshKey }: Props) {
                     {displayName}
                   </p>
                   <p className="text-xs text-gray-400 mt-0.5">
-                    {uploadedAt ? uploadedAt.toLocaleString() : doc.last_modified ?? '—'}
+                    {uploadedAt ? uploadedAt.toLocaleString() : doc.last_modified ?? '-'}
                     {doc.size > 0 && <span className="ml-2">{fmtSize(doc.size)}</span>}
                   </p>
                 </div>
@@ -153,7 +155,7 @@ export default function DocumentList({ clientId, refreshKey }: Props) {
                         disabled={isBusy}
                         className="text-xs px-2 py-1 bg-red-500 text-white rounded-md hover:bg-red-600 disabled:opacity-50"
                       >
-                        {isBusy ? '…' : 'Delete'}
+                        {isBusy ? '...' : 'Delete'}
                       </button>
                       <button
                         onClick={() => setConfirmDelete(null)}

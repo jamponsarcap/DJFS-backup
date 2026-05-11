@@ -176,6 +176,21 @@ def _pop_last_upload(client_id: str) -> dict | None:
     return last
 
 
+def _remove_upload_by_path(client_id: str, lakehouse_path: str) -> None:
+    """Remove the upload_history entry matching lakehouse_path and clear its hash."""
+    data = _load_hashes()
+    client = data.get(client_id)
+    if not client:
+        return
+    _migrate_client(client)
+    history = client.get("upload_history", [])
+    match = next((e for e in history if e.get("lakehouse_path") == lakehouse_path), None)
+    if match:
+        history.remove(match)
+        client.get("hashes", {}).pop(match.get("hash", ""), None)
+        _save_hashes(data)
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok"}
@@ -366,6 +381,7 @@ async def delete_document(client_id: str, body: _PathBody):
     deleted = await lakehouse_storage_service.delete_file(body.path)
     locks.discard(body.path)
     _save_locks(locks)
+    _remove_upload_by_path(client_id, body.path)
     await search_service.trigger_indexer()
     return {"deleted": deleted, "path": body.path}
 

@@ -30,6 +30,7 @@ export default function App() {
   const [nextRefreshAt, setNextRefreshAt] = useState<number | null>(null)
   const [cooldownSecs, setCooldownSecs] = useState(0)
   const [docListKey, setDocListKey] = useState(0)
+  const [historyRefreshKey, setHistoryRefreshKey] = useState(0)
 
   useEffect(() => {
     fetchRefreshStatus().then(s => {
@@ -211,11 +212,12 @@ export default function App() {
               <DocumentUpload
                 clientId={portfolio.client_id}
                 onUploadComplete={handleUploadComplete}
-                onUndoComplete={() => selected && loadPortfolio(selected.id)}
+                historyRefreshKey={historyRefreshKey}
               />
               <DocumentList
                 clientId={portfolio.client_id}
                 refreshKey={docListKey}
+                onDelete={() => setHistoryRefreshKey(k => k + 1)}
               />
             </div>
           </>
