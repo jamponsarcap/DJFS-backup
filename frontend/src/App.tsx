@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
 import { BarChart2, RefreshCw } from 'lucide-react'
 import ClientSelector from './components/ClientSelector'
-import StatusBar from './components/StatusBar'
 import KpiCards from './components/KpiCards'
 import AllocationChart from './components/AllocationChart'
 import AccountBalances from './components/AccountBalances'
@@ -14,14 +13,14 @@ import DocumentUpload from './components/DocumentUpload'
 import StatementDiffModal from './components/StatementDiffModal'
 import HoldingsTrendChart from './components/HoldingsTrendChart'
 import DocumentList from './components/DocumentList'
-import { fetchClients, fetchPortfolio, fetchStatus, refreshMarketData, fetchRefreshStatus } from './api/client'
-import type { Client, PortfolioData, ServiceStatus, DocumentUploadResponse } from './types'
+import AgentPortfolioInsights from './components/AgentPortfolioInsights'
+import { fetchClients, fetchPortfolio, refreshMarketData, fetchRefreshStatus, refreshPortfolioInsights } from './api/client'
+import type { Client, PortfolioData, DocumentUploadResponse } from './types'
 
 export default function App() {
   const [clients, setClients] = useState<Client[]>([])
   const [selected, setSelected] = useState<Client | null>(null)
   const [portfolio, setPortfolio] = useState<PortfolioData | null>(null)
-  const [status, setStatus] = useState<ServiceStatus | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [diffResult, setDiffResult] = useState<DocumentUploadResponse | null>(null)
@@ -31,6 +30,7 @@ export default function App() {
   const [cooldownSecs, setCooldownSecs] = useState(0)
   const [docListKey, setDocListKey] = useState(0)
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0)
+  const [insightsRefreshing, setInsightsRefreshing] = useState(false)
 
   useEffect(() => {
     fetchRefreshStatus().then(s => {
@@ -79,10 +79,6 @@ export default function App() {
         setSelected(restored ?? data[0])
       })
       .catch(() => setError('Cannot reach backend. Start the FastAPI server on port 8000.'))
-
-    fetchStatus()
-      .then(setStatus)
-      .catch(() => {/* status is optional */})
   }, [])
 
   const handleSelectClient = (client: Client) => {
@@ -107,7 +103,14 @@ export default function App() {
   const handleUploadComplete = (result: DocumentUploadResponse) => {
     setDiffResult(result)
     setDocListKey(k => k + 1)
-    if (selected) loadPortfolio(selected.id)
+    if (!selected) return
+    const clientId = selected.id
+    loadPortfolio(clientId)
+    setInsightsRefreshing(true)
+    refreshPortfolioInsights(clientId)
+      .then(() => { if (selected?.id === clientId) loadPortfolio(clientId) })
+      .catch(() => {})
+      .finally(() => setInsightsRefreshing(false))
   }
 
   return (
@@ -134,14 +137,6 @@ export default function App() {
           <ClientSelector clients={clients} selected={selected} onSelect={handleSelectClient} />
         </div>
 
-        {/* Status sub-bar */}
-        {status && (
-          <div style={{ backgroundColor: '#071020' }} className="border-t border-white/5">
-            <div className="max-w-screen-2xl mx-auto px-6 py-1.5">
-              <StatusBar status={status} />
-            </div>
-          </div>
-        )}
       </header>
 
       {/* ── Main ───────────────────────────────────────────────────────────── */}
@@ -174,16 +169,30 @@ export default function App() {
                   Last review: {selected?.last_review}
                 </p>
               </div>
-              {loading && (
-                <div className="flex items-center gap-2 text-sm text-gray-400">
-                  <RefreshCw size={16} className="animate-spin" />
-                  <span>Refreshing…</span>
-                </div>
-              )}
+              <div className="flex items-center gap-3">
+                {insightsRefreshing && (
+                  <div className="flex items-center gap-1.5 text-xs text-indigo-400 bg-indigo-50 border border-indigo-100 rounded-full px-3 py-1">
+                    <RefreshCw size={11} className="animate-spin" />
+                    <span>Refreshing insights…</span>
+                  </div>
+                )}
+                {loading && (
+                  <div className="flex items-center gap-2 text-sm text-gray-400">
+                    <RefreshCw size={16} className="animate-spin" />
+                    <span>Refreshing…</span>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* AI Briefing */}
             <InsightsSummary clientId={portfolio.client_id} />
+
+            {/* Portfolio Insights Agent */}
+            <AgentPortfolioInsights
+              clientId={portfolio.client_id}
+              onDataUpdated={() => selected && loadPortfolio(selected.id)}
+            />
 
             {/* KPI row */}
             <KpiCards data={portfolio} />

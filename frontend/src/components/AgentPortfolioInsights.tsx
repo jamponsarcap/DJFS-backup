@@ -1,11 +1,14 @@
 import { useState } from 'react'
-import { BrainCircuit, ChevronDown, ChevronUp, AlertTriangle, FileText, Info } from 'lucide-react'
+import { BrainCircuit, ChevronDown, ChevronUp, AlertTriangle, Info, CheckCircle2, Database } from 'lucide-react'
 import { fetchAgentPortfolio } from '../api/client'
 import type { AgentPortfolioInsights } from '../types'
 
-interface Props { clientId: string }
+interface Props {
+  clientId: string
+  onDataUpdated?: () => void
+}
 
-export default function AgentPortfolioInsights({ clientId }: Props) {
+export default function AgentPortfolioInsights({ clientId, onDataUpdated }: Props) {
   const [data, setData] = useState<AgentPortfolioInsights | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -21,6 +24,7 @@ export default function AgentPortfolioInsights({ clientId }: Props) {
       const result = await fetchAgentPortfolio(clientId)
       setData(result)
       setElapsed((Date.now() - start) / 1000)
+      if (!result.parse_error) onDataUpdated?.()
     } catch (err: any) {
       const detail = err?.response?.data?.detail ?? 'Failed to run Portfolio Insights Agent.'
       setError(detail)
@@ -67,8 +71,9 @@ export default function AgentPortfolioInsights({ clientId }: Props) {
       {/* Placeholder */}
       {!data && !loading && !error && (
         <p className="text-sm text-gray-400 italic">
-          Click "Run Agent" to have the Portfolio Insights Agent query Fabric SQL and Azure AI Search
-          and return a full structured portfolio payload with statement overlays and reconciliation notes.
+          Click "Run Agent" to refresh portfolio data — the agent will write today's performance
+          snapshot, recompute risk alerts, and update holding weights in Fabric SQL.
+          The dashboard will automatically reload when complete.
         </p>
       )}
 
@@ -94,12 +99,38 @@ export default function AgentPortfolioInsights({ clientId }: Props) {
       {data && !data.parse_error && (
         <div className="space-y-5">
 
-          {/* As-of + client confirmation */}
-          {(data.as_of || data.client) && (
+          {/* As-of + client */}
+          {(data.as_of || data.client_name || data.client?.client_name) && (
             <p className="text-xs text-gray-400">
-              {data.client?.client_name && <span className="font-medium text-gray-600">{data.client.client_name} · </span>}
-              {data.as_of && <span>As of {data.as_of}</span>}
+              <span className="font-medium text-gray-600">
+                {data.client_name ?? data.client?.client_name}
+              </span>
+              {data.as_of && <span> · As of {data.as_of}</span>}
             </p>
+          )}
+
+          {/* Write confirmation */}
+          {data.updates_written && (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-3">
+              <div className="flex items-center gap-1.5 mb-2">
+                <Database size={13} className="text-emerald-600" />
+                <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wide">Fabric SQL Updated</p>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="flex items-center gap-1.5 text-xs text-emerald-800">
+                  <CheckCircle2 size={12} className={data.updates_written.performance_snapshot ? 'text-emerald-500' : 'text-gray-300'} />
+                  Performance row
+                </div>
+                <div className="flex items-center gap-1.5 text-xs text-emerald-800">
+                  <CheckCircle2 size={12} className="text-emerald-500" />
+                  {data.updates_written.risk_alerts_count} risk alert{data.updates_written.risk_alerts_count !== 1 ? 's' : ''}
+                </div>
+                <div className="flex items-center gap-1.5 text-xs text-emerald-800">
+                  <CheckCircle2 size={12} className="text-emerald-500" />
+                  {data.updates_written.holdings_weights_updated} weight{data.updates_written.holdings_weights_updated !== 1 ? 's' : ''} updated
+                </div>
+              </div>
+            </div>
           )}
 
           {/* KPI metrics from agent */}
@@ -143,30 +174,27 @@ export default function AgentPortfolioInsights({ clientId }: Props) {
             </div>
           )}
 
-          {/* Statement insights */}
-          {(data.statement_insights?.highlights?.length ?? 0) > 0 && (
+          {/* Risk alerts written by agent */}
+          {(data.risk_alerts?.length ?? 0) > 0 && (
             <div>
               <div className="flex items-center gap-1.5 mb-2">
-                <FileText size={13} className="text-indigo-400" />
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Statement Highlights</p>
+                <AlertTriangle size={13} className="text-amber-500" />
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Risk Alerts</p>
               </div>
               <ul className="space-y-1">
-                {data.statement_insights!.highlights!.map((h, i) => (
-                  <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
-                    <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-indigo-400 shrink-0" />
-                    {h}
+                {data.risk_alerts!.map((alert, i) => (
+                  <li key={i} className={`text-sm px-3 py-1.5 rounded border flex items-start gap-2 ${
+                    alert.level === 'high'
+                      ? 'text-red-700 bg-red-50 border-red-100'
+                      : alert.level === 'medium'
+                      ? 'text-amber-700 bg-amber-50 border-amber-100'
+                      : 'text-gray-600 bg-gray-50 border-gray-100'
+                  }`}>
+                    <span className="font-medium shrink-0">{alert.category}:</span>
+                    {alert.message}
                   </li>
                 ))}
               </ul>
-              {(data.statement_insights?.documents_used?.length ?? 0) > 0 && (
-                <div className="mt-2 flex flex-wrap gap-1">
-                  {data.statement_insights!.documents_used!.map((d, i) => (
-                    <span key={i} className="text-xs bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded">
-                      {d.metadata_storage_name || d.statement_date}
-                    </span>
-                  ))}
-                </div>
-              )}
             </div>
           )}
 
@@ -216,7 +244,7 @@ export default function AgentPortfolioInsights({ clientId }: Props) {
             </button>
             {elapsed != null && (
               <span className="text-xs text-gray-400">
-                Generated in {elapsed.toFixed(1)}s
+                Completed in {elapsed.toFixed(1)}s
               </span>
             )}
           </div>

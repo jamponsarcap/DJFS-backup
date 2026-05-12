@@ -104,7 +104,7 @@ class FoundryAgentService:
             )
 
         raw = await asyncio.get_event_loop().run_in_executor(
-            None, self._run_sync, message, config.AZURE_AI_PORTFOLIO_AGENT_ID, 120.0
+            None, self._run_sync, message, config.AZURE_AI_PORTFOLIO_AGENT_ID, 180.0
         )
         return self._parse_insights(raw)
 
@@ -216,13 +216,21 @@ class FoundryAgentService:
         msg = (
             f"The following portfolio data has already been retrieved from Fabric SQL for "
             f"client: {label} (client_id: {client_id}). "
-            "Use this data directly — do NOT call the Fabric tool again.\n\n"
+            "Use this data directly — do NOT call the Fabric tool.\n\n"
             f"PORTFOLIO DATA:\n{json.dumps(portfolio, default=str)}"
         )
         if doc_context:
             snippets = "\n".join(f"- [{d['source']}] {d['content']}" for d in doc_context)
             msg += f"\n\nDOCUMENT CONTEXT (from Azure AI Search):\n{snippets}"
-        msg += "\n\nGenerate the full portfolio insights JSON payload now. Return JSON ONLY."
+        msg += (
+            "\n\nAnalyse the portfolio and return JSON ONLY (no markdown) with this structure:\n"
+            '{"client_id":"","client_name":"","as_of":"YYYY-MM-DD",'
+            '"ui_metrics":{"total_portfolio_value":{"value":null,"currency":"USD"},'
+            '"total_return_pct":{"value":null,"baseline_period_date":null},'
+            '"ytd_return_pct":{"value":null,"baseline_period_date":null,"note":""}},'
+            '"risk_alerts":[{"level":"","category":"","message":""}],'
+            '"reconciliation_notes":[],"missing_data":[]}'
+        )
         return msg
 
     # ── Reply parsers ─────────────────────────────────────────────────────────

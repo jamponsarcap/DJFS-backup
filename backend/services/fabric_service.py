@@ -439,4 +439,93 @@ class FabricService:
                       client_id, year_val, month_num))
 
 
+    async def write_performance_snapshot(
+        self, client_id: str, portfolio_value: float, benchmark_value: float | None
+    ) -> bool:
+        """Upsert today's performance row with the current portfolio value."""
+        if not self._live:
+            return True
+        today = datetime.date.today()
+        cur = self._cursor()
+        cur.execute(
+            "SELECT 1 FROM dbo.performance WHERE client_id = ? AND period_date = ?",
+            (client_id, today),
+        )
+        if cur.fetchone():
+            cur.execute(
+                "UPDATE dbo.performance SET portfolio_value = ? WHERE client_id = ? AND period_date = ?",
+                (portfolio_value, client_id, today),
+            )
+        else:
+            bv = benchmark_value if benchmark_value is not None else 0.0
+            cur.execute(
+                "INSERT INTO dbo.performance (client_id, period_date, portfolio_value, benchmark_value)"
+                " VALUES (?, ?, ?, ?)",
+                (client_id, today, portfolio_value, bv),
+            )
+        return True
+
+    async def write_risk_alerts(self, client_id: str, alerts: list[dict]) -> int:
+        """Write a pre-computed list of risk alerts (from the AI agent) to SQL."""
+        if not self._live:
+            return len(alerts)
+        cur = self._cursor()
+        cur.execute("DELETE FROM dbo.risk_alerts WHERE client_id = ?", (client_id,))
+        for alert in alerts:
+            cur.execute(
+                "INSERT INTO dbo.risk_alerts (client_id, level, category, message) VALUES (?, ?, ?, ?)",
+                (client_id, alert.get("level", "low"), alert.get("category", ""), alert.get("message", "")),
+            )
+        return len(alerts)
+
+    async def refresh_risk_alerts(
+        self, client_id: str, holdings: list[dict], total_value: float
+    ) -> int:
+        """Recompute and replace all risk alerts for a client based on current holdings."""
+        alerts: list[tuple[str, str, str]] = []
+
+        total_mv = sum(_f(h.get("market_value", 0)) for h in holdings)
+
+        for h in holdings:
+            weight = (_f(h.get("market_value", 0)) / total_mv * 100) if total_mv else 0.0
+            if weight > 30:
+                alerts.append((
+                    "high", "Concentration Risk",
+                    f"{h['symbol']} represents {weight:.1f}% of the portfolio",
+                ))
+
+        equity_weight = sum(
+            (_f(h.get("market_value", 0)) / total_mv * 100) if total_mv else 0.0
+            for h in holdings if h.get("asset_class") == "equity"
+        )
+        if equity_weight > 80:
+            alerts.append((
+                "medium", "Equity Exposure",
+                f"Equity allocation at {equity_weight:.1f}% exceeds 80% threshold",
+            ))
+
+        for h in holdings:
+            glp = _f(h.get("gain_loss_pct", 0))
+            if glp < -15:
+                alerts.append((
+                    "medium", "Unrealised Loss",
+                    f"{h['symbol']} shows {glp:.1f}% unrealised loss",
+                ))
+
+        if not alerts:
+            alerts.append(("low", "Monitoring", "Portfolio is within normal parameters"))
+
+        if not self._live:
+            return len(alerts)
+
+        cur = self._cursor()
+        cur.execute("DELETE FROM dbo.risk_alerts WHERE client_id = ?", (client_id,))
+        for level, category, message in alerts:
+            cur.execute(
+                "INSERT INTO dbo.risk_alerts (client_id, level, category, message) VALUES (?, ?, ?, ?)",
+                (client_id, level, category, message),
+            )
+        return len(alerts)
+
+
 fabric_service = FabricService()

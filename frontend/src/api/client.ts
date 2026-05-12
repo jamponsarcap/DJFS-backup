@@ -80,6 +80,12 @@ export const unlockDocument = (clientId: string, path: string): Promise<{ locked
 export const deleteDocument = (clientId: string, path: string): Promise<{ deleted: boolean }> =>
   api.post(`/documents/${clientId}/delete`, { path }).then(r => r.data)
 
+export const refreshPortfolioInsights = (clientId: string): Promise<{
+  performance_snapshot: boolean
+  risk_alerts_count: number
+  holdings_updated: number
+}> => api.post(`/portfolio/${clientId}/refresh`).then(r => r.data)
+
 export const fetchRefreshStatus = (): Promise<{
   last_refreshed: string | null
   next_refresh_allowed: string | null

@@ -107,11 +107,21 @@ class DocumentIntelligenceService:
         current_year = datetime.date.today().year
 
         with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
-            for page in pdf.pages:
-                for table in (page.extract_tables() or []):
+            pages = list(pdf.pages)
+
+            for page in pages:
+                # Strategy 1: line-based table detection (native/scanned PDFs)
+                tables = page.extract_tables() or []
+                # Strategy 2: text-alignment detection (some Chrome PDFs)
+                if not tables:
+                    tables = page.extract_tables(table_settings={
+                        "vertical_strategy": "text",
+                        "horizontal_strategy": "text",
+                    }) or []
+
+                for table in tables:
                     if not table or len(table) < 2:
                         continue
-
                     header = {
                         i: str(cell).lower().strip()
                         for i, cell in enumerate(table[0])
@@ -120,7 +130,6 @@ class DocumentIntelligenceService:
                     cols = _find_columns(header)
                     if cols["date"] is None or not _has_amount_cols(cols):
                         continue
-
                     for row in table[1:]:
                         if not row:
                             continue
@@ -137,10 +146,70 @@ class DocumentIntelligenceService:
                         if tx:
                             transactions.append(tx)
 
+            # Strategy 3: balance-delta text fallback — for Chrome-printed PDFs where
+            # table detection finds nothing. Reads raw text line by line, finds rows
+            # with a date and a running balance, infers each transaction from the delta.
+            if not transactions:
+                print("[DocumentIntelligence] Table extraction found nothing — trying balance-delta text fallback")
+                transactions = _extract_by_balance_delta(pages, current_year)
+                print(f"[DocumentIntelligence] Balance-delta fallback: {len(transactions)} transactions found")
+
         return transactions
 
 
 # ── Shared helpers ─────────────────────────────────────────────────────────────
+
+def _extract_by_balance_delta(pages: list, current_year: int) -> list[dict]:
+    """
+    Fallback for Chrome-printed PDFs where pdfplumber table detection fails.
+
+    Reads each page as plain text, finds lines that contain a date and at least
+    one monetary amount, then treats the last amount on each line as the running
+    balance. The transaction amount is inferred from the delta between consecutive
+    balances:
+      - balance went up  → credit  (negative amount in our convention)
+      - balance went down → debit  (positive amount in our convention)
+    """
+    import re
+    amount_re = re.compile(r'[\$£€]?([\d,]+\.\d{2})')
+    date_re   = re.compile(r'(\d{4}-\d{2}-\d{2}|\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})')
+
+    dated_rows = []
+    for page in pages:
+        text = page.extract_text() or ""
+        for line in text.splitlines():
+            m = date_re.search(line)
+            if not m:
+                continue
+            amounts = [float(a.replace(",", "")) for a in amount_re.findall(line)]
+            if not amounts:
+                continue
+            dated_rows.append({"date": m.group(1), "balance": amounts[-1]})
+
+    transactions = []
+    prev_balance: float | None = None
+    for row in dated_rows:
+        balance = row["balance"]
+        if prev_balance is None:
+            prev_balance = balance
+            continue
+        delta = round(balance - prev_balance, 2)
+        if abs(delta) < 0.01:
+            prev_balance = balance
+            continue
+        # positive delta = balance increased = credit (inflow → negative in our convention)
+        # negative delta = balance decreased = debit  (outflow → positive in our convention)
+        tx = _parse_row(
+            raw_date=row["date"],
+            raw_amount=str(-delta),
+            description="",
+            current_year=current_year,
+        )
+        if tx:
+            transactions.append(tx)
+        prev_balance = balance
+
+    return transactions
 
 def _find_columns(header: dict[int, str]) -> dict:
     """
@@ -189,13 +258,14 @@ def _resolve_amount(row: dict[int, str], cols: dict) -> str | None:
     raw_w = row.get(cols["withdrawals"], "").strip() if cols["withdrawals"] is not None else ""
     raw_d = row.get(cols["deposits"], "").strip() if cols["deposits"] is not None else ""
 
-    # Strip currency symbols and commas before checking emptiness
-    clean_w = raw_w.replace("$", "").replace(",", "").replace(" ", "")
-    clean_d = raw_d.replace("$", "").replace(",", "").replace(" ", "")
+    def _is_blank(s: str) -> bool:
+        """True if the cell is empty or a placeholder dash (–, —, -)."""
+        return not s.replace("$", "").replace(",", "").replace(" ", "") \
+                    .replace("–", "").replace("—", "").replace("-", "")
 
-    if clean_w:
+    if not _is_blank(raw_w):
         return raw_w          # positive → outflow / debit
-    if clean_d:
+    if not _is_blank(raw_d):
         return f"-{raw_d}"    # negative → inflow / credit
     return None               # both empty (e.g. header repeat or subtotal row)
 

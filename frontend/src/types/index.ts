@@ -85,8 +85,26 @@ export interface ServiceStatus {
   foundry_portfolio_agent: boolean
 }
 
-// PortfolioInsightsAgent response shape (top-level fields we display)
+// PortfolioInsightsAgent response shape
 export interface AgentPortfolioInsights {
+  // top-level fields from write-back agent
+  client_id?: string
+  client_name?: string
+  as_of?: string
+  updates_written?: {
+    performance_snapshot: boolean
+    risk_alerts_count: number
+    holdings_weights_updated: number
+  }
+  ui_metrics?: {
+    total_portfolio_value?: { value: number | null; currency: string }
+    total_return_pct?: { value: number | null; baseline_period_date: string | null }
+    ytd_return_pct?: { value: number | null; baseline_period_date: string | null; note?: string }
+  }
+  risk_alerts?: { level: string; category: string; message: string }[]
+  reconciliation_notes?: string[]
+  missing_data?: string[]
+  // kept for backward compat with old read-only payload
   client?: {
     client_id: string
     client_name: string
@@ -94,19 +112,10 @@ export interface AgentPortfolioInsights {
     rm_name: string
     last_review: string
   }
-  as_of?: string
-  ui_metrics?: {
-    total_portfolio_value?: { value: number | null; currency: string }
-    total_return_pct?: { value: number | null; baseline_period_date: string | null }
-    ytd_return_pct?: { value: number | null; baseline_period_date: string | null; note?: string }
-  }
   statement_insights?: {
     documents_used?: { metadata_storage_name: string; metadata_storage_path: string; statement_date: string; statement_period: string }[]
     highlights?: string[]
   }
-  reconciliation_notes?: string[]
-  missing_data?: string[]
-  // full payload fields kept as unknown for expandable raw view
   charts?: unknown
   tables?: unknown
   // error fallback from parse failure

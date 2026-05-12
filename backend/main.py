@@ -274,7 +274,50 @@ async def get_agent_portfolio(client_id: str):
     except (TimeoutError, RuntimeError) as e:
         raise HTTPException(status_code=502, detail=str(e))
 
+    # Write the agent's computed values back to Fabric SQL from Python (fast, no agent round-trip).
+    perf_ok = False
+    alerts_count = 0
+    if result and not result.get("parse_error"):
+        total_value = portfolio.get("total_value", 0.0)
+        perf = portfolio.get("performance", [])
+        benchmark_value = perf[-1].get("benchmark_value") if perf else None
+        perf_ok = await fabric_service.write_performance_snapshot(client_id, total_value, benchmark_value)
+        if result.get("risk_alerts"):
+            alerts_count = await fabric_service.write_risk_alerts(client_id, result["risk_alerts"])
+
+    result["updates_written"] = {
+        "performance_snapshot": perf_ok,
+        "risk_alerts_count": alerts_count,
+        "holdings_weights_updated": 0,
+    }
     return result
+
+
+@app.post("/api/portfolio/{client_id}/refresh")
+async def refresh_portfolio_insights(client_id: str):
+    """
+    Fast write-back: upsert today's performance row, recompute risk alerts, update holding weights.
+    Pure Python — no AI agent round-trip. Triggered automatically after document upload.
+    """
+    data = await fabric_service.get_portfolio_data(client_id)
+    if not data:
+        raise HTTPException(status_code=404, detail=f"Client {client_id} not found")
+
+    holdings = data.get("holdings", [])
+    total_value = data.get("total_value", 0.0)
+
+    if holdings:
+        holdings = await market_data_service.enrich_holdings_with_market_data(holdings)
+
+    perf = data.get("performance", [])
+    benchmark_value = perf[-1].get("benchmark_value") if perf else None
+
+    perf_ok      = await fabric_service.write_performance_snapshot(client_id, total_value, benchmark_value)
+    alerts_count = await fabric_service.refresh_risk_alerts(client_id, holdings, total_value)
+    weights_done = await fabric_service.update_holdings_market_data(client_id, holdings)
+
+    print(f"[refresh] {client_id} — perf={perf_ok} alerts={alerts_count} weights={weights_done}")
+    return {"performance_snapshot": perf_ok, "risk_alerts_count": alerts_count, "holdings_updated": weights_done}
 
 
 @app.post("/api/upload-statement/{client_id}", response_model=DocumentUploadResponse)
