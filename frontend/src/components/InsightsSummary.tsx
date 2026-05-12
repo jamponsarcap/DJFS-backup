@@ -1,64 +1,17 @@
 import { useState, useEffect, useRef } from 'react'
-import {
-  Sparkles, Database, User, DollarSign, TrendingUp,
-  BarChart2, ArrowUpDown, AlertTriangle, FileText,
-} from 'lucide-react'
+import { Sparkles, Database } from 'lucide-react'
 import { fetchInsights } from '../api/client'
 import type { InsightsResponse } from '../types'
 
 interface Props { clientId: string }
 
-// ── Markdown helpers ──────────────────────────────────────────────────────────
-
-function renderInline(text: string) {
-  // Convert **bold** to <strong> spans
-  const parts = text.split(/(\*\*[^*]+\*\*)/)
-  return parts.map((part, i) =>
-    part.startsWith('**') && part.endsWith('**')
-      ? <strong key={i} className="font-semibold text-gray-800">{part.slice(2, -2)}</strong>
-      : <span key={i}>{part}</span>
-  )
-}
-
-interface Section { heading: string; items: string[] }
-
-function parseNarrative(text: string): Section[] {
-  const sections: Section[] = []
-  let current: Section | null = null
-
-  for (const raw of text.split('\n')) {
-    const line = raw.trim()
-    if (!line) continue
-
-    if (/^#{1,3} /.test(line)) {
-      if (current) sections.push(current)
-      current = { heading: line.replace(/^#{1,3} /, '').replace(/:$/, ''), items: [] }
-    } else if (/^[-*•] /.test(line)) {
-      if (!current) current = { heading: '', items: [] }
-      current.items.push(line.replace(/^[-*•] /, ''))
-    } else {
-      // Non-bullet paragraph line — treat as a plain item
-      if (!current) current = { heading: '', items: [] }
-      current.items.push(line)
-    }
-  }
-  if (current) sections.push(current)
-  return sections.filter(s => s.heading || s.items.length > 0)
-}
-
-const SECTION_ICONS: { match: RegExp; icon: React.ReactNode; color: string }[] = [
-  { match: /client|snapshot/i,    icon: <User size={13} />,          color: 'text-blue-500' },
-  { match: /value|portfolio/i,    icon: <DollarSign size={13} />,    color: 'text-emerald-500' },
-  { match: /performance|return/i, icon: <TrendingUp size={13} />,    color: 'text-teal-500' },
-  { match: /holding|allocation/i, icon: <BarChart2 size={13} />,     color: 'text-indigo-500' },
-  { match: /cash.?flow/i,         icon: <ArrowUpDown size={13} />,   color: 'text-purple-500' },
-  { match: /risk|alert/i,         icon: <AlertTriangle size={13} />, color: 'text-amber-500' },
-  { match: /statement|document/i, icon: <FileText size={13} />,      color: 'text-gray-500' },
-]
-
-function sectionIcon(heading: string) {
-  const match = SECTION_ICONS.find(s => s.match.test(heading))
-  return match ?? { icon: <Sparkles size={13} />, color: 'text-teal-400' }
+// Split prose into individual sentences for display.
+// Splits on '. ' followed by a capital letter to avoid breaking decimals / abbreviations.
+function splitSentences(text: string): string[] {
+  return text
+    .split(/(?<=\.)\s+(?=[A-Z])/)
+    .map(s => s.trim())
+    .filter(Boolean)
 }
 
 // ── Live elapsed timer ────────────────────────────────────────────────────────
@@ -105,7 +58,7 @@ export default function InsightsSummary({ clientId }: Props) {
     }
   }
 
-  const sections = insights ? parseNarrative(insights.narrative) : []
+  const sentences = insights ? splitSentences(insights.narrative) : []
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col">
@@ -118,7 +71,7 @@ export default function InsightsSummary({ clientId }: Props) {
           </div>
           <div>
             <h3 className="text-sm font-bold text-gray-900 leading-tight">AI-Generated RM Briefing</h3>
-            <div className="flex items-center gap-2 mt-0.5">
+            <div className="mt-0.5">
               {elapsed != null && !loading ? (
                 <span className="flex items-center gap-1 text-xs text-emerald-600 font-medium">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
@@ -160,7 +113,7 @@ export default function InsightsSummary({ clientId }: Props) {
       </div>
 
       {/* ── Body ── */}
-      <div className="flex-1 px-5 py-4">
+      <div className="flex-1 px-5 pb-5">
 
         {error && (
           <p className="text-sm text-red-500 bg-red-50 border border-red-200 rounded-lg p-3">{error}</p>
@@ -172,8 +125,8 @@ export default function InsightsSummary({ clientId }: Props) {
               <Sparkles size={22} className="text-gray-300" />
             </div>
             <p className="text-sm text-gray-400 text-center max-w-xs">
-              Click <span className="font-medium text-gray-500">"Generate Briefing"</span> to run the
-              Summarization Agent and produce a pre-review summary for this client.
+              Click <span className="font-medium text-gray-500">"Generate Briefing"</span> to produce
+              a concise pre-meeting advisor briefing for this client.
             </p>
           </div>
         )}
@@ -185,55 +138,39 @@ export default function InsightsSummary({ clientId }: Props) {
               <Sparkles size={14} className="text-teal-400 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
             </div>
             <div className="text-center">
-              <p className="text-sm text-gray-600 font-medium">Agent is running…</p>
-              <p className="text-xs text-gray-400 mt-0.5">Querying Fabric SQL and Azure AI Search</p>
+              <p className="text-sm text-gray-600 font-medium">Generating briefing…</p>
+              <p className="text-xs text-gray-400 mt-0.5">Analysing portfolio data and documents</p>
             </div>
           </div>
         )}
 
-        {insights && sections.length > 0 && (
-          <div className="space-y-3">
-            {sections.map((section, si) => {
-              const { icon, color } = sectionIcon(section.heading)
-              return (
-                <div key={si} className="rounded-lg border border-gray-100 bg-gray-50/60 overflow-hidden">
-                  {section.heading && (
-                    <div className="flex items-center gap-2 px-3 py-2 bg-white border-b border-gray-100">
-                      <span className={color}>{icon}</span>
-                      <span className="text-xs font-semibold text-gray-700">{section.heading}</span>
-                    </div>
-                  )}
-                  <ul className="px-3 py-2 space-y-1">
-                    {section.items.map((item, ii) => (
-                      <li key={ii} className="flex items-start gap-2 text-sm text-gray-600">
-                        <span className="mt-1.5 w-1 h-1 rounded-full bg-gray-300 shrink-0" />
-                        <span className="leading-relaxed">{renderInline(item)}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )
-            })}
+        {insights && (
+          <div className="border-l-2 border-teal-400 pl-4 space-y-2.5">
+            {sentences.map((sentence, i) => (
+              <p key={i} className="text-sm text-gray-700 leading-relaxed">
+                {sentence}
+              </p>
+            ))}
           </div>
         )}
 
-        {/* Fallback: if the narrative doesn't parse into sections, render it plainly */}
-        {insights && sections.length === 0 && (
-          <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{insights.narrative}</p>
-        )}
       </div>
 
       {/* ── Footer ── */}
       {insights && (
         <div className="flex items-center gap-2 px-5 py-3 border-t border-gray-100 bg-gray-50/50 rounded-b-xl">
           <Database size={11} className="text-gray-300 shrink-0" />
-          <div className="flex items-center gap-1.5 flex-wrap">
+          <div className="flex items-center flex-wrap">
             {insights.data_sources.map((s, i) => (
-              <span key={i} className="text-xs text-gray-400">{i > 0 && <span className="mr-1.5 text-gray-200">·</span>}{s}</span>
+              <span key={i} className="text-xs text-gray-400">
+                {i > 0 && <span className="mx-1.5 text-gray-200">·</span>}
+                {s}
+              </span>
             ))}
           </div>
         </div>
       )}
+
     </div>
   )
 }

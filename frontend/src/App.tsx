@@ -10,7 +10,6 @@ import HoldingsTable from './components/HoldingsTable'
 import CashFlowChart from './components/CashFlowChart'
 import RiskAlerts from './components/RiskAlerts'
 import InsightsSummary from './components/InsightsSummary'
-import AgentPortfolioInsights from './components/AgentPortfolioInsights'
 import DocumentUpload from './components/DocumentUpload'
 import StatementDiffModal from './components/StatementDiffModal'
 import HoldingsTrendChart from './components/HoldingsTrendChart'
@@ -183,11 +182,8 @@ export default function App() {
               )}
             </div>
 
-            {/* AI Briefing panels — SummarizationAgent + PortfolioInsightsAgent */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <InsightsSummary clientId={portfolio.client_id} />
-              <AgentPortfolioInsights clientId={portfolio.client_id} />
-            </div>
+            {/* AI Briefing */}
+            <InsightsSummary clientId={portfolio.client_id} />
 
             {/* KPI row */}
             <KpiCards data={portfolio} />
